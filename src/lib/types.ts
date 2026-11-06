@@ -11,6 +11,8 @@ export interface Waypoint extends LatLng {
 
 export type RouteMode = 'manual' | 'random' | 'art';
 
+export type UnitSystem = 'km' | 'mi';
+
 export interface ElevationPoint {
   distanceKm: number;
   elevationM: number;

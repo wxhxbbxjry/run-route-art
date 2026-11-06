@@ -21,8 +21,11 @@ interface RouteMapProps {
   onTileChange: (tile: TileLayerId) => void;
   onMapClick: (latlng: LatLng) => void;
   onWaypointDrag?: (index: number, latlng: LatLng) => void;
+  onWaypointDelete?: (index: number) => void;
   centerLocation?: LatLng | null;
   isArtMode?: boolean;
+  hoverLocation?: LatLng | null;
+  flyToLocation?: LatLng | null;
 }
 
 export default function RouteMap({
@@ -34,8 +37,11 @@ export default function RouteMap({
   onTileChange,
   onMapClick,
   onWaypointDrag,
+  onWaypointDelete,
   centerLocation,
   isArtMode = false,
+  hoverLocation,
+  flyToLocation,
 }: RouteMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -44,6 +50,7 @@ export default function RouteMap({
   const routeGlowPolylineRef = useRef<L.Polyline | null>(null);
   const blueprintPolylineRef = useRef<L.Polyline | null>(null);
   const markersGroupRef = useRef<L.LayerGroup | null>(null);
+  const hoverMarkerRef = useRef<L.Marker | null>(null);
   const onMapClickRef = useRef(onMapClick);
   useEffect(() => {
     onMapClickRef.current = onMapClick;
@@ -187,6 +194,53 @@ export default function RouteMap({
     }
   }, [routeData]);
 
+  // Handle Fly To searched location
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !flyToLocation) return;
+    map.flyTo([flyToLocation.lat, flyToLocation.lng], 15, {
+      duration: 1.2,
+      easeLinearity: 0.25,
+    });
+  }, [flyToLocation]);
+
+  // Handle Elevation Scrubbing Hover Marker (OnTheGoMap style)
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    if (!hoverLocation) {
+      if (hoverMarkerRef.current) {
+        map.removeLayer(hoverMarkerRef.current);
+        hoverMarkerRef.current = null;
+      }
+      return;
+    }
+
+    const hoverIcon = L.divIcon({
+      className: 'custom-hover-pin-wrapper',
+      html: `
+        <div class="relative flex items-center justify-center">
+          <div class="absolute -inset-2 rounded-full bg-cyan-400/40 animate-ping"></div>
+          <div class="w-4 h-4 rounded-full bg-cyan-400 border-2 border-white shadow-[0_0_12px_rgba(6,182,212,1)]"></div>
+        </div>
+      `,
+      iconSize: [20, 20],
+      iconAnchor: [10, 10],
+    });
+
+    if (hoverMarkerRef.current) {
+      hoverMarkerRef.current.setLatLng([hoverLocation.lat, hoverLocation.lng]);
+    } else {
+      const marker = L.marker([hoverLocation.lat, hoverLocation.lng], {
+        icon: hoverIcon,
+        interactive: false,
+        zIndexOffset: 1000,
+      }).addTo(map);
+      hoverMarkerRef.current = marker;
+    }
+  }, [hoverLocation]);
+
   // Update Markers (Start, Finish, Waypoints, Art Center)
   useEffect(() => {
     const map = mapInstanceRef.current;
@@ -245,7 +299,7 @@ export default function RouteMap({
 
       const customIcon = L.divIcon({
         className: 'custom-pin-container',
-        html: `<div class="${iconClass}" title="Waypoint ${idx + 1}">${iconHtml}</div>`,
+        html: `<div class="${iconClass}" title="Waypoint ${idx + 1} (Klik / Klik Kanan untuk hapus, geser untuk ubah rute)">${iconHtml}</div>`,
         iconSize: size,
         iconAnchor: anchor,
       });
@@ -262,8 +316,33 @@ export default function RouteMap({
           onWaypointDrag(idx, { lat: pos.lat, lng: pos.lng });
         });
       }
+
+      if (onWaypointDelete) {
+        // Right-click to quickly delete (classic OnTheGoMap behavior)
+        marker.on('contextmenu', (e) => {
+          L.DomEvent.stopPropagation(e);
+          onWaypointDelete(idx);
+        });
+
+        // Popup with delete action on click
+        const popupDiv = document.createElement('div');
+        popupDiv.className = 'p-1 text-center font-sans';
+        popupDiv.innerHTML = `
+          <div class="text-[11px] font-bold text-slate-800 mb-1">Waypoint #${idx + 1}</div>
+          <button class="px-2 py-1 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-semibold text-[10px] rounded transition shadow">
+            Hapus Titik
+          </button>
+        `;
+        const deleteBtn = popupDiv.querySelector('button');
+        deleteBtn?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          map.closePopup();
+          onWaypointDelete(idx);
+        });
+        marker.bindPopup(popupDiv, { closeButton: false, offset: [0, -10] });
+      }
     });
-  }, [waypoints, isArtMode, centerLocation, onWaypointDrag]);
+  }, [waypoints, isArtMode, centerLocation, onWaypointDrag, onWaypointDelete]);
 
   // Center or Fit Bounds
   const fitToRoute = useCallback(() => {

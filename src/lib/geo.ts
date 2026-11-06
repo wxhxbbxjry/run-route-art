@@ -225,3 +225,47 @@ export function calculateCalories(
   const intensity = speedKmh > 12 ? 1.08 : speedKmh > 9 ? 1.02 : 0.98;
   return Math.round(distanceKm * weightKg * intensity);
 }
+
+/**
+ * Converts kilometers to miles.
+ */
+export function kmToMiles(km: number): number {
+  return km * 0.621371;
+}
+
+/**
+ * Converts meters to feet.
+ */
+export function metersToFeet(meters: number): number {
+  return Math.round(meters * 3.28084);
+}
+
+/**
+ * Finds the geographic coordinate along a route polyline at a given distance in kilometers.
+ * Used for elevation chart mouse hover scrubbing (like OnTheGoMap).
+ */
+export function getCoordinateAtDistance(
+  coordinates: LatLng[],
+  targetDistanceKm: number
+): LatLng | null {
+  if (!coordinates || coordinates.length === 0) return null;
+  if (targetDistanceKm <= 0 || coordinates.length === 1) return coordinates[0];
+
+  let accumulatedDist = 0;
+
+  for (let i = 0; i < coordinates.length - 1; i++) {
+    const segDist = haversineDistance(coordinates[i], coordinates[i + 1]);
+    if (accumulatedDist + segDist >= targetDistanceKm) {
+      const remaining = targetDistanceKm - accumulatedDist;
+      const ratio = segDist > 0 ? remaining / segDist : 0;
+
+      return {
+        lat: coordinates[i].lat + (coordinates[i + 1].lat - coordinates[i].lat) * ratio,
+        lng: coordinates[i].lng + (coordinates[i + 1].lng - coordinates[i].lng) * ratio,
+      };
+    }
+    accumulatedDist += segDist;
+  }
+
+  return coordinates[coordinates.length - 1];
+}

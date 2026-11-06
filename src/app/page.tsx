@@ -9,9 +9,10 @@ import {
   RouteMode,
   TileLayerId,
   GpsShapeKey,
+  UnitSystem,
 } from '@/lib/types';
 import { GPS_SHAPES } from '@/lib/shapes';
-import { transformShapePoints } from '@/lib/geo';
+import { transformShapePoints, getCoordinateAtDistance } from '@/lib/geo';
 import {
   fetchSmartManualRoute,
   generateAccurateLoop,
@@ -24,6 +25,7 @@ import StatsHud from '@/components/UI/StatsHud';
 import ElevationProfile from '@/components/UI/ElevationProfile';
 import ExportModal from '@/components/UI/ExportModal';
 import Toast, { ToastMessage } from '@/components/UI/Toast';
+import SearchBar from '@/components/UI/SearchBar';
 
 // Dynamically import Leaflet Map with SSR disabled
 const RouteMap = dynamic(() => import('@/components/Map/RouteMap'), {
@@ -42,13 +44,17 @@ export default function HomePage() {
   // Navigation & Mode
   const [currentMode, setCurrentMode] = useState<RouteMode>('manual');
   const [selectedTile, setSelectedTile] = useState<TileLayerId>('dark');
+  const [unitSystem, setUnitSystem] = useState<UnitSystem>('km');
   const [isLoadingRoute, setIsLoadingRoute] = useState<boolean>(false);
+  const [hoverLocation, setHoverLocation] = useState<LatLng | null>(null);
+  const [flyToLocation, setFlyToLocation] = useState<LatLng | null>(null);
 
   // 1. ISOLATED STATE: Manual Tap Mode
   const [manualWaypoints, setManualWaypoints] = useState<Waypoint[]>([]);
   const [manualRouteData, setManualRouteData] = useState<RouteData | null>(null);
   const [manualSnapToRoads, setManualSnapToRoads] = useState<boolean>(true);
   const [allowContraflow, setAllowContraflow] = useState<boolean>(true); // Default true: Runners can run against traffic
+  const [manualRedoStack, setManualRedoStack] = useState<Waypoint[][]>([]);
 
   // 2. ISOLATED STATE: Random Loop Generator Mode
   const [loopStartLocation, setLoopStartLocation] = useState<LatLng | null>({
@@ -97,6 +103,31 @@ export default function HomePage() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  // Mode-isolated active states
+  const activeWaypoints =
+    currentMode === 'manual'
+      ? manualWaypoints
+      : currentMode === 'random'
+      ? loopWaypoints
+      : artWaypoints;
+
+  const activeRouteData =
+    currentMode === 'manual'
+      ? manualRouteData
+      : currentMode === 'random'
+      ? loopRouteData
+      : artRouteData;
+
+  // STRICT ISOLATION: GPS Art Blueprint ONLY renders in 'art' mode!
+  const activeBlueprintCoords = currentMode === 'art' ? blueprintCoords : null;
+  const isArtModeActive = currentMode === 'art';
+  const activeCenterLocation =
+    currentMode === 'art'
+      ? artCenterLocation
+      : currentMode === 'random'
+      ? loopStartLocation
+      : null;
+
   // Update GPS Art Blueprint coordinates when shape, center, scale, or rotation changes
   useEffect(() => {
     if (!artCenterLocation) return;
@@ -112,10 +143,38 @@ export default function HomePage() {
     setBlueprintCoords(transformed);
   }, [selectedShape, artCenterLocation, artScaleKm, artRotationDeg]);
 
+  // Handle Search Result from OSM Nominatim (OnTheGoMap search style)
+  const handleSelectSearchResult = useCallback(
+    (latlng: LatLng, name: string) => {
+      setFlyToLocation(latlng);
+      if (currentMode === 'art') {
+        setArtCenterLocation(latlng);
+      } else if (currentMode === 'random') {
+        setLoopStartLocation(latlng);
+      }
+      addToast('info', 'Lokasi Ditemukan', name.split(',')[0]);
+    },
+    [currentMode, addToast]
+  );
+
+  // Handle Elevation Scrubbing Hover (OnTheGoMap cursor tracking)
+  const handleHoverDistance = useCallback(
+    (distKm: number | null) => {
+      if (distKm === null || !activeRouteData || activeRouteData.coordinates.length < 2) {
+        setHoverLocation(null);
+        return;
+      }
+      const coord = getCoordinateAtDistance(activeRouteData.coordinates, distKm);
+      setHoverLocation(coord);
+    },
+    [activeRouteData]
+  );
+
   // Handle Map Clicks based on active mode
   const handleMapClick = useCallback(
     async (clickedLatLng: LatLng) => {
       if (currentMode === 'manual') {
+        setManualRedoStack([]); // Reset redo stack on new addition
         const newWaypoint: Waypoint = {
           id: `wp-${Date.now()}-${manualWaypoints.length + 1}`,
           lat: clickedLatLng.lat,
@@ -165,6 +224,58 @@ export default function HomePage() {
     [currentMode, manualWaypoints, manualSnapToRoads, allowContraflow, addToast]
   );
 
+  // Manual Mode: Drag Waypoint (OnTheGoMap draggable pin)
+  const handleWaypointDrag = useCallback(
+    async (index: number, newPos: LatLng) => {
+      if (currentMode !== 'manual') return;
+      const updated = [...manualWaypoints];
+      updated[index] = {
+        ...updated[index],
+        lat: newPos.lat,
+        lng: newPos.lng,
+      };
+      setManualWaypoints(updated);
+      setManualRedoStack([]);
+
+      if (updated.length >= 2) {
+        setIsLoadingRoute(true);
+        const result = await fetchSmartManualRoute(
+          updated,
+          manualSnapToRoads,
+          allowContraflow
+        );
+        setIsLoadingRoute(false);
+        setManualRouteData(buildRouteData(updated, result, 'manual'));
+      }
+    },
+    [currentMode, manualWaypoints, manualSnapToRoads, allowContraflow]
+  );
+
+  // Manual Mode: Delete Single Waypoint (OnTheGoMap click/right-click delete)
+  const handleWaypointDelete = useCallback(
+    async (index: number) => {
+      if (currentMode !== 'manual') return;
+      setManualRedoStack((prev) => [...prev, manualWaypoints]);
+      const updated = manualWaypoints.filter((_, idx) => idx !== index);
+      setManualWaypoints(updated);
+
+      if (updated.length >= 2) {
+        setIsLoadingRoute(true);
+        const result = await fetchSmartManualRoute(
+          updated,
+          manualSnapToRoads,
+          allowContraflow
+        );
+        setIsLoadingRoute(false);
+        setManualRouteData(buildRouteData(updated, result, 'manual'));
+      } else {
+        setManualRouteData(null);
+      }
+      addToast('info', 'Waypoint Dihapus', `Waypoint #${index + 1} berhasil dihapus.`);
+    },
+    [currentMode, manualWaypoints, manualSnapToRoads, allowContraflow, addToast]
+  );
+
   // Manual Mode: Toggle Snap
   const handleToggleManualSnap = useCallback(
     async (newSnapState: boolean) => {
@@ -204,6 +315,7 @@ export default function HomePage() {
   // Manual Mode: Undo
   const handleUndoManualWaypoint = useCallback(async () => {
     if (manualWaypoints.length === 0) return;
+    setManualRedoStack((prev) => [...prev, manualWaypoints]);
     const updated = manualWaypoints.slice(0, -1);
     setManualWaypoints(updated);
 
@@ -221,16 +333,70 @@ export default function HomePage() {
     }
   }, [manualWaypoints, manualSnapToRoads, allowContraflow]);
 
+  // Manual Mode: Redo
+  const handleRedoManualWaypoint = useCallback(async () => {
+    if (manualRedoStack.length === 0) return;
+    const nextWaypoints = manualRedoStack[manualRedoStack.length - 1];
+    setManualRedoStack((prev) => prev.slice(0, -1));
+    setManualWaypoints(nextWaypoints);
+
+    if (nextWaypoints.length >= 2) {
+      setIsLoadingRoute(true);
+      const result = await fetchSmartManualRoute(
+        nextWaypoints,
+        manualSnapToRoads,
+        allowContraflow
+      );
+      setIsLoadingRoute(false);
+      setManualRouteData(buildRouteData(nextWaypoints, result, 'manual'));
+    } else {
+      setManualRouteData(null);
+    }
+  }, [manualRedoStack, manualSnapToRoads, allowContraflow]);
+
+  // Manual Mode: Out & Back (OnTheGoMap signature feature - reverses and returns to start)
+  const handleOutAndBack = useCallback(async () => {
+    if (manualWaypoints.length < 2) return;
+    setManualRedoStack((prev) => [...prev, manualWaypoints]);
+
+    // Reverse intermediate points back to start
+    const returnPoints = manualWaypoints
+      .slice(0, -1)
+      .reverse()
+      .map((wp, idx) => ({
+        id: `wp-return-${Date.now()}-${idx}`,
+        lat: wp.lat,
+        lng: wp.lng,
+        name: `Return ${wp.name}`,
+      }));
+
+    const combined = [...manualWaypoints, ...returnPoints];
+    setManualWaypoints(combined);
+    setIsLoadingRoute(true);
+    const result = await fetchSmartManualRoute(
+      combined,
+      manualSnapToRoads,
+      allowContraflow
+    );
+    setIsLoadingRoute(false);
+    setManualRouteData(buildRouteData(combined, result, 'manual'));
+    addToast('success', 'Rute Bolak-Balik Terbentuk', 'Rute digandakan kembali ke titik asal (Out & Back)!');
+  }, [manualWaypoints, manualSnapToRoads, allowContraflow, addToast]);
+
   // Manual Mode: Clear
   const handleClearManualWaypoints = useCallback(() => {
+    if (manualWaypoints.length > 0) {
+      setManualRedoStack((prev) => [...prev, manualWaypoints]);
+    }
     setManualWaypoints([]);
     setManualRouteData(null);
     addToast('info', 'Rute Manual Direset', 'Semua titik waypoint telah dihapus.');
-  }, [addToast]);
+  }, [manualWaypoints, addToast]);
 
   // Manual Mode: Close Loop
   const handleCloseManualLoop = useCallback(async () => {
     if (manualWaypoints.length < 2) return;
+    setManualRedoStack((prev) => [...prev, manualWaypoints]);
     const startPoint = manualWaypoints[0];
     const closedWaypoints = [
       ...manualWaypoints,
@@ -257,6 +423,7 @@ export default function HomePage() {
   // Manual Mode: Reverse Route
   const handleReverseManualRoute = useCallback(async () => {
     if (manualWaypoints.length < 2) return;
+    setManualRedoStack((prev) => [...prev, manualWaypoints]);
     const reversed = [...manualWaypoints].reverse();
     setManualWaypoints(reversed);
     setIsLoadingRoute(true);
@@ -420,33 +587,13 @@ export default function HomePage() {
     );
   }, [currentMode, addToast]);
 
-  // Mode-isolated active states
-  const activeWaypoints =
-    currentMode === 'manual'
-      ? manualWaypoints
-      : currentMode === 'random'
-      ? loopWaypoints
-      : artWaypoints;
-
-  const activeRouteData =
-    currentMode === 'manual'
-      ? manualRouteData
-      : currentMode === 'random'
-      ? loopRouteData
-      : artRouteData;
-
-  // STRICT ISOLATION: GPS Art Blueprint ONLY renders in 'art' mode!
-  const activeBlueprintCoords = currentMode === 'art' ? blueprintCoords : null;
-  const isArtModeActive = currentMode === 'art';
-  const activeCenterLocation =
-    currentMode === 'art'
-      ? artCenterLocation
-      : currentMode === 'random'
-      ? loopStartLocation
-      : null;
-
   return (
     <main className="relative w-screen h-screen overflow-hidden flex bg-[#080c14]">
+      {/* Search Location Bar (OnTheGoMap OSM Nominatim Search) */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 w-[92%] max-w-sm pointer-events-auto">
+        <SearchBar onSelectLocation={handleSelectSearchResult} />
+      </div>
+
       {/* Interactive Fullscreen Map */}
       <div className="absolute inset-0 z-0">
         <RouteMap
@@ -457,8 +604,12 @@ export default function HomePage() {
           selectedTile={selectedTile}
           onTileChange={setSelectedTile}
           onMapClick={handleMapClick}
+          onWaypointDrag={handleWaypointDrag}
+          onWaypointDelete={handleWaypointDelete}
           centerLocation={activeCenterLocation}
           isArtMode={isArtModeActive}
+          hoverLocation={hoverLocation}
+          flyToLocation={flyToLocation}
         />
       </div>
 
@@ -480,6 +631,9 @@ export default function HomePage() {
           }
         }}
         onUndoWaypoint={handleUndoManualWaypoint}
+        onRedoWaypoint={handleRedoManualWaypoint}
+        canRedo={manualRedoStack.length > 0}
+        onOutAndBack={handleOutAndBack}
         onClearWaypoints={handleClearManualWaypoints}
         onCloseLoop={handleCloseManualLoop}
         onReverseRoute={handleReverseManualRoute}
@@ -515,6 +669,8 @@ export default function HomePage() {
               gainM={activeRouteData.elevationGainM}
               lossM={activeRouteData.elevationLossM}
               distanceKm={activeRouteData.distanceKm}
+              unitSystem={unitSystem}
+              onHoverDistance={handleHoverDistance}
             />
           </div>
         )}
@@ -527,6 +683,8 @@ export default function HomePage() {
             onOpenExport={() => setIsExportOpen(true)}
             showElevation={showElevation}
             onToggleElevation={() => setShowElevation(!showElevation)}
+            unitSystem={unitSystem}
+            onToggleUnit={() => setUnitSystem((u) => (u === 'km' ? 'mi' : 'km'))}
           />
         </div>
       </div>

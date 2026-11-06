@@ -25,6 +25,9 @@ interface SidebarProps {
   allowContraflow?: boolean;
   onToggleContraflow?: (allow: boolean) => void;
   onUndoWaypoint: () => void;
+  onRedoWaypoint?: () => void;
+  canRedo?: boolean;
+  onOutAndBack?: () => void;
   onClearWaypoints: () => void;
   onCloseLoop: () => void;
   onReverseRoute: () => void;
@@ -60,6 +63,9 @@ export default function Sidebar({
   allowContraflow,
   onToggleContraflow,
   onUndoWaypoint,
+  onRedoWaypoint,
+  canRedo,
+  onOutAndBack,
   onClearWaypoints,
   onCloseLoop,
   onReverseRoute,
@@ -162,6 +168,9 @@ export default function Sidebar({
               allowContraflow={allowContraflow}
               onToggleContraflow={onToggleContraflow}
               onUndo={onUndoWaypoint}
+              onRedo={onRedoWaypoint}
+              canRedo={canRedo}
+              onOutAndBack={onOutAndBack}
               onClear={onClearWaypoints}
               onCloseLoop={onCloseLoop}
               onReverse={onReverseRoute}
@@ -291,6 +300,9 @@ export default function Sidebar({
                 allowContraflow={allowContraflow}
                 onToggleContraflow={onToggleContraflow}
                 onUndo={onUndoWaypoint}
+                onRedo={onRedoWaypoint}
+                canRedo={canRedo}
+                onOutAndBack={onOutAndBack}
                 onClear={onClearWaypoints}
                 onCloseLoop={onCloseLoop}
                 onReverse={onReverseRoute}

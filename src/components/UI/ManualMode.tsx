@@ -4,6 +4,7 @@ import React from 'react';
 import { Waypoint, RouteData } from '@/lib/types';
 import {
   Undo2,
+  Redo2,
   Trash2,
   Repeat,
   Compass,
@@ -12,6 +13,7 @@ import {
   MousePointerClick,
   CheckCircle2,
   Footprints,
+  ArrowLeftRight,
 } from 'lucide-react';
 
 interface ManualModeProps {
@@ -22,9 +24,12 @@ interface ManualModeProps {
   allowContraflow?: boolean;
   onToggleContraflow?: (allow: boolean) => void;
   onUndo: () => void;
-  onClear: () => void;
+  onRedo?: () => void;
+  canRedo?: boolean;
+  onOutAndBack?: () => void;
   onCloseLoop: () => void;
   onReverse: () => void;
+  onClear: () => void;
   isLoading: boolean;
 }
 
@@ -36,9 +41,12 @@ export default function ManualMode({
   allowContraflow = true,
   onToggleContraflow,
   onUndo,
-  onClear,
+  onRedo,
+  canRedo = false,
+  onOutAndBack,
   onCloseLoop,
   onReverse,
+  onClear,
   isLoading,
 }: ManualModeProps) {
   const isLoopClosed =
@@ -166,6 +174,25 @@ export default function ManualMode({
         >
           <Undo2 className="w-3.5 h-3.5" />
           <span>Undo Titik</span>
+        </button>
+
+        <button
+          onClick={onRedo}
+          disabled={!canRedo || isLoading}
+          className="px-3 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/60 font-medium text-xs flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none"
+        >
+          <Redo2 className="w-3.5 h-3.5" />
+          <span>Redo Titik</span>
+        </button>
+
+        <button
+          onClick={onOutAndBack}
+          disabled={waypoints.length < 2 || isLoopClosed || isLoading}
+          title="Gandakan rute kembali ke titik start (OnTheGoMap Out & Back)"
+          className="px-3 py-2.5 rounded-xl bg-cyan-950/40 hover:bg-cyan-900/50 text-cyan-300 hover:text-cyan-200 border border-cyan-800/60 font-medium text-xs flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none"
+        >
+          <ArrowLeftRight className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Out & Back</span>
         </button>
 
         <button

@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { RouteData } from '@/lib/types';
-import { calculatePaceTime, calculateCalories } from '@/lib/geo';
+import { RouteData, UnitSystem } from '@/lib/types';
+import { calculatePaceTime, calculateCalories, kmToMiles, metersToFeet } from '@/lib/geo';
 import {
   Timer,
   Flame,
@@ -21,6 +21,8 @@ interface StatsHudProps {
   onOpenExport: () => void;
   showElevation: boolean;
   onToggleElevation: () => void;
+  unitSystem?: UnitSystem;
+  onToggleUnit?: () => void;
 }
 
 const PACE_PRESETS = [
@@ -38,30 +40,55 @@ export default function StatsHud({
   onOpenExport,
   showElevation,
   onToggleElevation,
+  unitSystem = 'km',
+  onToggleUnit,
 }: StatsHudProps) {
   const [showPacePicker, setShowPacePicker] = useState(false);
 
+  const isMiles = unitSystem === 'mi';
   const distanceKm = routeData ? routeData.distanceKm : 0;
+  const displayDist = isMiles ? kmToMiles(distanceKm) : distanceKm;
+  const distUnitLabel = isMiles ? 'MI' : 'KM';
+
   const timeInfo = calculatePaceTime(distanceKm, paceSeconds);
   const calories = calculateCalories(distanceKm, paceSeconds);
-  const paceMinutes = Math.floor(paceSeconds / 60);
-  const paceRemSeconds = paceSeconds % 60;
+
+  // Compute pace according to unit
+  const activePaceSeconds = isMiles ? Math.round(paceSeconds * 1.60934) : paceSeconds;
+  const paceMinutes = Math.floor(activePaceSeconds / 60);
+  const paceRemSeconds = activePaceSeconds % 60;
   const paceString = `${paceMinutes}:${paceRemSeconds.toString().padStart(2, '0')}`;
+  const paceUnitLabel = isMiles ? '/MI' : '/KM';
+
+  // Compute elevation gain
+  const elevGain = routeData ? routeData.elevationGainM : 0;
+  const elevDisplay = isMiles ? `+${metersToFeet(elevGain)}ft` : `+${elevGain}m`;
 
   return (
     <div className="glass-panel rounded-2xl border border-slate-700/70 p-3.5 shadow-2xl space-y-3">
       {/* Top Main Metrics Row */}
       <div className="grid grid-cols-4 gap-2 items-center text-center">
-        {/* Distance */}
+        {/* Distance + Unit Switcher */}
         <div className="flex flex-col items-center">
-          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
-            Jarak Total
-          </span>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+              Jarak
+            </span>
+            {onToggleUnit && (
+              <button
+                onClick={onToggleUnit}
+                title="Ganti satuan KM / Miles (OnTheGoMap style)"
+                className="px-1 py-0.2 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-[9px] border border-slate-700"
+              >
+                {distUnitLabel}
+              </button>
+            )}
+          </div>
           <div className="flex items-baseline gap-1 mt-0.5">
             <span className="text-2xl font-black font-mono tracking-tight text-lime-400">
-              {distanceKm.toFixed(2)}
+              {displayDist.toFixed(2)}
             </span>
-            <span className="text-[10px] font-bold text-slate-400">KM</span>
+            <span className="text-[10px] font-bold text-slate-400">{distUnitLabel}</span>
           </div>
         </div>
 
@@ -91,7 +118,7 @@ export default function StatsHud({
             <Mountain className="w-3 h-3 text-emerald-400" /> Elevasi
           </span>
           <span className="text-lg font-black font-mono tracking-tight text-emerald-400 mt-0.5">
-            +{routeData ? routeData.elevationGainM : 0}m
+            {elevDisplay}
           </span>
         </div>
       </div>
@@ -102,7 +129,7 @@ export default function StatsHud({
           <Activity className="w-4 h-4 text-lime-400" />
           <span className="text-slate-300 font-medium">Target Pace Lari:</span>
           <span className="font-mono font-bold text-lime-400 bg-lime-500/10 px-2 py-0.5 rounded border border-lime-500/30">
-            {paceString} /KM
+            {paceString} {paceUnitLabel}
           </span>
         </div>
 
