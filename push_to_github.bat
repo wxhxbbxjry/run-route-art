@@ -2,27 +2,39 @@
 setlocal
 cd /d "%~dp0"
 echo ===================================================================
-echo   RunRoute Art - Push ke GitHub (wxhxbbxjry/antigravity)
+echo   RunRoute Art - Push ke Repositori Baru: run-route-art
 echo ===================================================================
+echo Target: https://github.com/wxhxbbxjry/run-route-art.git
 echo.
 
-rem Gunakan portable git jika sistem belum menginstal git di PATH
+rem Gunakan portable git jika sistem belum memasukkan git ke PATH
 if exist "..\mingit\cmd\git.exe" (
     set "PATH=%~dp0..\mingit\cmd;%PATH%"
 )
 
-echo Memeriksa status Git lokal...
-git status
+echo Memeriksa branch lokal...
+git branch -M main
 
 echo.
-echo Melakukan push ke branch 'run-route-art' (agar file Telering aman)...
-git branch -M run-route-art
-git push -u origin run-route-art
+echo Melakukan push ke origin main...
+git push -u origin main
 
 if %errorlevel% neq 0 (
     echo.
-    echo [INFO] Jika ingin menggabungkan langsung ke branch main, jalankan:
-    echo        git push origin run-route-art:main
+    echo ===================================================================
+    echo  [PENTING] Jika push gagal dengan pesan "Repository not found":
+    echo  1. Pastikan Anda sudah membuat repo kosong di:
+    echo     https://github.com/new
+    echo  2. Beri nama: run-route-art
+    echo  3. Klik Create repository
+    echo  4. Jalankan script ini kembali!
+    echo ===================================================================
+) else (
+    echo.
+    echo ===================================================================
+    echo  BERHASIL! Kode proyek sudah terunggah ke:
+    echo  https://github.com/wxhxbbxjry/run-route-art
+    echo ===================================================================
 )
 
 echo.
