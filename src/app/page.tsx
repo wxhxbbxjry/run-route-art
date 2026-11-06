@@ -11,11 +11,13 @@ import {
   GpsShapeKey,
 } from '@/lib/types';
 import { GPS_SHAPES } from '@/lib/shapes';
+import { transformShapePoints } from '@/lib/geo';
 import {
-  generateLoopWaypoints,
-  transformShapePoints,
-} from '@/lib/geo';
-import { fetchOsrmRoute, buildRouteData } from '@/lib/osrm';
+  fetchSmartManualRoute,
+  generateAccurateLoop,
+  generateGpsArtRoute,
+  buildRouteData,
+} from '@/lib/osrm';
 
 import Sidebar from '@/components/UI/Sidebar';
 import StatsHud from '@/components/UI/StatsHud';
@@ -40,38 +42,43 @@ export default function HomePage() {
   // Navigation & Mode
   const [currentMode, setCurrentMode] = useState<RouteMode>('manual');
   const [selectedTile, setSelectedTile] = useState<TileLayerId>('dark');
-
-  // Waypoints & Route
-  const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
-  const [routeData, setRouteData] = useState<RouteData | null>(null);
-  const [snapToRoads, setSnapToRoads] = useState<boolean>(true);
   const [isLoadingRoute, setIsLoadingRoute] = useState<boolean>(false);
 
-  // Random Loop Generator State
-  const [startLocation, setStartLocation] = useState<LatLng | null>({
+  // 1. ISOLATED STATE: Manual Tap Mode
+  const [manualWaypoints, setManualWaypoints] = useState<Waypoint[]>([]);
+  const [manualRouteData, setManualRouteData] = useState<RouteData | null>(null);
+  const [manualSnapToRoads, setManualSnapToRoads] = useState<boolean>(true);
+
+  // 2. ISOLATED STATE: Random Loop Generator Mode
+  const [loopStartLocation, setLoopStartLocation] = useState<LatLng | null>({
     lat: -6.2088,
-    lng: 106.8456, // Central Jakarta / Monas default
+    lng: 106.8456, // Central Jakarta default
   });
   const [targetDistanceKm, setTargetDistanceKm] = useState<number>(10);
   const [loopHeadingOffset, setLoopHeadingOffset] = useState<number>(45);
+  const [loopWaypoints, setLoopWaypoints] = useState<Waypoint[]>([]);
+  const [loopRouteData, setLoopRouteData] = useState<RouteData | null>(null);
 
-  // GPS Art State
+  // 3. ISOLATED STATE: GPS Art Mode
   const [selectedShape, setSelectedShape] = useState<GpsShapeKey>('heart');
   const [artCenterLocation, setArtCenterLocation] = useState<LatLng | null>({
     lat: -6.2088,
     lng: 106.8456,
   });
-  const [artScaleKm, setArtScaleKm] = useState<number>(3.5);
+  const [artScaleKm, setArtScaleKm] = useState<number>(3.0);
   const [artRotationDeg, setArtRotationDeg] = useState<number>(0);
+  const [artSnapToRoads, setArtSnapToRoads] = useState<boolean>(false); // False = Pure recognizable shape
   const [showBlueprint, setShowBlueprint] = useState<boolean>(true);
   const [blueprintCoords, setBlueprintCoords] = useState<LatLng[] | null>(null);
+  const [artWaypoints, setArtWaypoints] = useState<Waypoint[]>([]);
+  const [artRouteData, setArtRouteData] = useState<RouteData | null>(null);
 
-  // Stats & Pace
+  // Stats & Pace HUD
   const [paceSeconds, setPaceSeconds] = useState<number>(360); // 6:00 / km
   const [showElevation, setShowElevation] = useState<boolean>(false);
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
 
-  // Toasts
+  // Toasts Feedback
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const addToast = useCallback(
@@ -104,28 +111,24 @@ export default function HomePage() {
     setBlueprintCoords(transformed);
   }, [selectedShape, artCenterLocation, artScaleKm, artRotationDeg]);
 
-  // Handle Map Clicks based on current active mode
+  // Handle Map Clicks based on active mode
   const handleMapClick = useCallback(
     async (clickedLatLng: LatLng) => {
       if (currentMode === 'manual') {
         const newWaypoint: Waypoint = {
-          id: `wp-${Date.now()}-${waypoints.length + 1}`,
+          id: `wp-${Date.now()}-${manualWaypoints.length + 1}`,
           lat: clickedLatLng.lat,
           lng: clickedLatLng.lng,
-          name: `Point ${waypoints.length + 1}`,
+          name: `Point ${manualWaypoints.length + 1}`,
         };
 
-        const updatedWaypoints = [...waypoints, newWaypoint];
-        setWaypoints(updatedWaypoints);
+        const updatedWaypoints = [...manualWaypoints, newWaypoint];
+        setManualWaypoints(updatedWaypoints);
 
         if (updatedWaypoints.length >= 2) {
           setIsLoadingRoute(true);
-          const result = await fetchOsrmRoute(updatedWaypoints, snapToRoads);
+          const result = await fetchSmartManualRoute(updatedWaypoints, manualSnapToRoads);
           setIsLoadingRoute(false);
-
-          if (result.error) {
-            addToast('warning', 'OSRM Demo Limit / Offline', result.error);
-          }
 
           const built = buildRouteData(
             updatedWaypoints,
@@ -134,13 +137,12 @@ export default function HomePage() {
             undefined,
             undefined
           );
-          setRouteData(built);
+          setManualRouteData(built);
         } else {
-          // Single waypoint placed
-          setRouteData(null);
+          setManualRouteData(null);
         }
       } else if (currentMode === 'random') {
-        setStartLocation(clickedLatLng);
+        setLoopStartLocation(clickedLatLng);
         addToast(
           'info',
           'Titik Start Dipilih',
@@ -155,59 +157,52 @@ export default function HomePage() {
         );
       }
     },
-    [currentMode, waypoints, snapToRoads, addToast]
+    [currentMode, manualWaypoints, manualSnapToRoads, addToast]
   );
 
-  // Manual Mode Actions: Toggle Snap
-  const handleToggleSnap = useCallback(
+  // Manual Mode: Toggle Snap
+  const handleToggleManualSnap = useCallback(
     async (newSnapState: boolean) => {
-      setSnapToRoads(newSnapState);
-      if (waypoints.length >= 2) {
+      setManualSnapToRoads(newSnapState);
+      if (manualWaypoints.length >= 2) {
         setIsLoadingRoute(true);
-        const result = await fetchOsrmRoute(waypoints, newSnapState);
+        const result = await fetchSmartManualRoute(manualWaypoints, newSnapState);
         setIsLoadingRoute(false);
-        const built = buildRouteData(
-          waypoints,
-          result,
-          currentMode,
-          targetDistanceKm,
-          currentMode === 'art' ? GPS_SHAPES[selectedShape]?.name : undefined
-        );
-        setRouteData(built);
+        setManualRouteData(buildRouteData(manualWaypoints, result, 'manual'));
       }
     },
-    [waypoints, currentMode, targetDistanceKm, selectedShape]
+    [manualWaypoints]
   );
 
-  // Manual Mode Actions: Undo
-  const handleUndoWaypoint = useCallback(async () => {
-    if (waypoints.length === 0) return;
-    const updated = waypoints.slice(0, -1);
-    setWaypoints(updated);
+  // Manual Mode: Undo
+  const handleUndoManualWaypoint = useCallback(async () => {
+    if (manualWaypoints.length === 0) return;
+    const updated = manualWaypoints.slice(0, -1);
+    setManualWaypoints(updated);
 
     if (updated.length >= 2) {
       setIsLoadingRoute(true);
-      const result = await fetchOsrmRoute(updated, snapToRoads);
+      const result = await fetchSmartManualRoute(updated, manualSnapToRoads);
       setIsLoadingRoute(false);
-      setRouteData(buildRouteData(updated, result, 'manual'));
+      setManualRouteData(buildRouteData(updated, result, 'manual'));
     } else {
-      setRouteData(null);
+      setManualRouteData(null);
     }
-  }, [waypoints, snapToRoads]);
+  }, [manualWaypoints, manualSnapToRoads]);
 
-  // Manual Mode Actions: Clear
-  const handleClearWaypoints = useCallback(() => {
-    setWaypoints([]);
-    setRouteData(null);
-    addToast('info', 'Rute Direset', 'Semua titik waypoint telah dihapus.');
+  // Manual Mode: Clear
+  const handleClearManualWaypoints = useCallback(() => {
+    setManualWaypoints([]);
+    setManualRouteData(null);
+    addToast('info', 'Rute Manual Direset', 'Semua titik waypoint telah dihapus.');
   }, [addToast]);
 
-  // Manual Mode Actions: Close Loop
-  const handleCloseLoop = useCallback(async () => {
-    if (waypoints.length < 2) return;
-    const startPoint = waypoints[0];
+  // Manual Mode: Close Loop
+  const handleCloseManualLoop = useCallback(async () => {
+    if (manualWaypoints.length < 2) return;
+    const startPoint = manualWaypoints[0];
     const closedWaypoints = [
-      ...waypoints,
+      ...manualWaypoints,
       {
         id: `wp-${Date.now()}-finish`,
         lat: startPoint.lat,
@@ -216,86 +211,81 @@ export default function HomePage() {
       },
     ];
 
-    setWaypoints(closedWaypoints);
+    setManualWaypoints(closedWaypoints);
     setIsLoadingRoute(true);
-    const result = await fetchOsrmRoute(closedWaypoints, snapToRoads);
+    const result = await fetchSmartManualRoute(closedWaypoints, manualSnapToRoads);
     setIsLoadingRoute(false);
-    setRouteData(buildRouteData(closedWaypoints, result, 'manual'));
-    addToast('success', 'Loop Berhasil Ditutup', 'Rute sekarang kembali ke titik start!');
-  }, [waypoints, snapToRoads, addToast]);
+    setManualRouteData(buildRouteData(closedWaypoints, result, 'manual'));
+    addToast('success', 'Loop Berhasil Ditutup', 'Rute kembali ke titik awal!');
+  }, [manualWaypoints, manualSnapToRoads, addToast]);
 
-  // Manual Mode Actions: Reverse Route
-  const handleReverseRoute = useCallback(async () => {
-    if (waypoints.length < 2) return;
-    const reversed = [...waypoints].reverse();
-    setWaypoints(reversed);
+  // Manual Mode: Reverse Route
+  const handleReverseManualRoute = useCallback(async () => {
+    if (manualWaypoints.length < 2) return;
+    const reversed = [...manualWaypoints].reverse();
+    setManualWaypoints(reversed);
     setIsLoadingRoute(true);
-    const result = await fetchOsrmRoute(reversed, snapToRoads);
+    const result = await fetchSmartManualRoute(reversed, manualSnapToRoads);
     setIsLoadingRoute(false);
-    setRouteData(buildRouteData(reversed, result, 'manual'));
+    setManualRouteData(buildRouteData(reversed, result, 'manual'));
     addToast('info', 'Arah Dibalik', 'Titik awal dan akhir rute telah ditukar.');
-  }, [waypoints, snapToRoads, addToast]);
+  }, [manualWaypoints, manualSnapToRoads, addToast]);
 
-  // Random Loop Generator
+  // Random Loop: Generate Loop
   const handleGenerateLoop = useCallback(
     async (offsetHeading?: number) => {
-      if (!startLocation) {
+      if (!loopStartLocation) {
         addToast('warning', 'Pilih Lokasi Awal', 'Klik pada peta untuk menentukan titik start.');
         return;
       }
 
       setIsLoadingRoute(true);
-      const heading = offsetHeading !== undefined ? offsetHeading : Math.random() * 360;
+      const heading = offsetHeading !== undefined ? offsetHeading : loopHeadingOffset;
       setLoopHeadingOffset(heading);
 
-      // Generate circular waypoints
-      const loopCoords = generateLoopWaypoints(startLocation, targetDistanceKm, {
-        headingOffsetDeg: heading,
-        numVertices: targetDistanceKm > 20 ? 8 : 6,
-        jitterFactor: 0.12,
-      });
-
-      const loopWaypoints: Waypoint[] = loopCoords.map((pt, idx) => ({
-        id: `loop-${idx}`,
-        lat: pt.lat,
-        lng: pt.lng,
-        name: idx === 0 ? 'Start/Finish' : `Loop Km ${(idx * 1.5).toFixed(1)}`,
-      }));
-
-      setWaypoints(loopWaypoints);
-
-      // Route through OSRM
-      const result = await fetchOsrmRoute(loopCoords, true);
+      // High-accuracy natural loop generator
+      const result = await generateAccurateLoop(loopStartLocation, targetDistanceKm, heading);
       setIsLoadingRoute(false);
 
       if (result.error) {
-        addToast('warning', 'OSRM Limit', result.error);
+        addToast('warning', 'OSRM Fallback', result.error);
       }
 
-      const built = buildRouteData(
-        loopWaypoints,
-        result,
-        'random',
-        targetDistanceKm
-      );
-      setRouteData(built);
+      const loopWps: Waypoint[] = [
+        {
+          id: 'start-point',
+          lat: loopStartLocation.lat,
+          lng: loopStartLocation.lng,
+          name: 'Start / Finish',
+        },
+      ];
+
+      setLoopWaypoints(loopWps);
+      const built = buildRouteData(loopWps, result, 'random', targetDistanceKm);
+      setLoopRouteData(built);
+
+      const accuracy = (
+        (1 - Math.abs(result.distanceKm - targetDistanceKm) / targetDistanceKm) *
+        100
+      ).toFixed(1);
 
       addToast(
         'success',
         `Random Loop ${targetDistanceKm}K Siap!`,
-        `Jarak kalkulasi rute: ${result.distanceKm.toFixed(2)} km.`
+        `Jarak: ${result.distanceKm.toFixed(2)} km (Akurasi ${accuracy}%). Start & Finish 100% bertemu!`
       );
     },
-    [startLocation, targetDistanceKm, addToast]
+    [loopStartLocation, targetDistanceKm, loopHeadingOffset, addToast]
   );
 
   // Random Loop: Re-roll
   const handleReRollLoop = useCallback(() => {
     const nextHeading = (loopHeadingOffset + 60 + Math.random() * 30) % 360;
+    setLoopHeadingOffset(nextHeading);
     handleGenerateLoop(nextHeading);
   }, [loopHeadingOffset, handleGenerateLoop]);
 
-  // GPS Art Generator
+  // GPS Art: Generate
   const handleGenerateArt = useCallback(async () => {
     if (!artCenterLocation) {
       addToast('warning', 'Pusat Belum Dipilih', 'Klik peta untuk menentukan titik gambar.');
@@ -314,33 +304,22 @@ export default function HomePage() {
     );
     setBlueprintCoords(transformed);
 
-    const artWaypoints: Waypoint[] = transformed.map((pt, idx) => ({
+    const artWps: Waypoint[] = transformed.map((pt, idx) => ({
       id: `art-pt-${idx}`,
       lat: pt.lat,
       lng: pt.lng,
       name: `${shapeDef.name} #${idx + 1}`,
     }));
+    setArtWaypoints(artWps);
 
-    setWaypoints(artWaypoints);
-
-    // Route calculation
-    const result = await fetchOsrmRoute(transformed, snapToRoads);
+    // Route calculation via smart GPS Art engine
+    const result = await generateGpsArtRoute(transformed, artSnapToRoads);
     setIsLoadingRoute(false);
 
-    if (result.error) {
-      addToast('warning', 'OSRM Fallback', result.error);
-    }
+    const built = buildRouteData(artWps, result, 'art', artScaleKm, shapeDef.name);
+    setArtRouteData(built);
 
-    const built = buildRouteData(
-      artWaypoints,
-      result,
-      'art',
-      artScaleKm,
-      shapeDef.name
-    );
-    setRouteData(built);
-
-    // Trigger celebration confetti
+    // Celebration confetti
     if (typeof window !== 'undefined') {
       try {
         const confetti = (await import('canvas-confetti')).default;
@@ -357,14 +336,14 @@ export default function HomePage() {
     addToast(
       'success',
       `GPS Art ${shapeDef.name} Terbentuk!`,
-      `Total lari: ${result.distanceKm.toFixed(2)} km. Anda siap berlari membuat karya seni!`
+      `Total lari: ${result.distanceKm.toFixed(2)} km. Bentuk presisi siap diekspor ke Strava!`
     );
   }, [
     artCenterLocation,
     selectedShape,
     artScaleKm,
     artRotationDeg,
-    snapToRoads,
+    artSnapToRoads,
     addToast,
   ]);
 
@@ -379,7 +358,7 @@ export default function HomePage() {
       (pos) => {
         const userLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         if (currentMode === 'random') {
-          setStartLocation(userLoc);
+          setLoopStartLocation(userLoc);
         } else if (currentMode === 'art') {
           setArtCenterLocation(userLoc);
         }
@@ -396,53 +375,77 @@ export default function HomePage() {
     );
   }, [currentMode, addToast]);
 
+  // Mode-isolated active states
+  const activeWaypoints =
+    currentMode === 'manual'
+      ? manualWaypoints
+      : currentMode === 'random'
+      ? loopWaypoints
+      : artWaypoints;
+
+  const activeRouteData =
+    currentMode === 'manual'
+      ? manualRouteData
+      : currentMode === 'random'
+      ? loopRouteData
+      : artRouteData;
+
+  // STRICT ISOLATION: GPS Art Blueprint ONLY renders in 'art' mode!
+  const activeBlueprintCoords = currentMode === 'art' ? blueprintCoords : null;
+  const isArtModeActive = currentMode === 'art';
+  const activeCenterLocation =
+    currentMode === 'art'
+      ? artCenterLocation
+      : currentMode === 'random'
+      ? loopStartLocation
+      : null;
+
   return (
     <main className="relative w-screen h-screen overflow-hidden flex bg-[#080c14]">
       {/* Interactive Fullscreen Map */}
       <div className="absolute inset-0 z-0">
         <RouteMap
-          waypoints={waypoints}
-          routeData={routeData}
-          blueprintCoords={blueprintCoords}
-          showBlueprint={showBlueprint}
+          waypoints={activeWaypoints}
+          routeData={activeRouteData}
+          blueprintCoords={activeBlueprintCoords}
+          showBlueprint={showBlueprint && isArtModeActive}
           selectedTile={selectedTile}
           onTileChange={setSelectedTile}
           onMapClick={handleMapClick}
-          centerLocation={currentMode === 'art' ? artCenterLocation : startLocation}
-          isArtMode={currentMode === 'art'}
+          centerLocation={activeCenterLocation}
+          isArtMode={isArtModeActive}
         />
       </div>
 
-      {/* Floating Control Sidebar (Desktop & Mobile) */}
+      {/* Floating Control Sidebar */}
       <Sidebar
         currentMode={currentMode}
         onModeChange={(m) => {
           setCurrentMode(m);
-          // If switching to art mode and no blueprint exists, generate one
-          if (m === 'art' && artCenterLocation) {
-            const transformed = transformShapePoints(
-              GPS_SHAPES[selectedShape].points,
-              artCenterLocation,
-              artScaleKm,
-              artRotationDeg
-            );
-            setBlueprintCoords(transformed);
+        }}
+        // Manual mode props
+        waypoints={manualWaypoints}
+        routeData={manualRouteData}
+        snapToRoads={currentMode === 'art' ? artSnapToRoads : manualSnapToRoads}
+        onToggleSnap={(snap) => {
+          if (currentMode === 'art') {
+            setArtSnapToRoads(snap);
+          } else {
+            handleToggleManualSnap(snap);
           }
         }}
-        waypoints={waypoints}
-        routeData={routeData}
-        snapToRoads={snapToRoads}
-        onToggleSnap={handleToggleSnap}
-        onUndoWaypoint={handleUndoWaypoint}
-        onClearWaypoints={handleClearWaypoints}
-        onCloseLoop={handleCloseLoop}
-        onReverseRoute={handleReverseRoute}
-        startLocation={startLocation}
+        onUndoWaypoint={handleUndoManualWaypoint}
+        onClearWaypoints={handleClearManualWaypoints}
+        onCloseLoop={handleCloseManualLoop}
+        onReverseRoute={handleReverseManualRoute}
+        // Random loop props
+        startLocation={loopStartLocation}
         targetDistanceKm={targetDistanceKm}
         onTargetDistanceChange={setTargetDistanceKm}
         onUseMyLocation={handleUseMyLocation}
         onGenerateLoop={() => handleGenerateLoop()}
         onReRollLoop={handleReRollLoop}
+        // GPS Art props
         selectedShape={selectedShape}
         onSelectShape={setSelectedShape}
         artCenterLocation={artCenterLocation}
@@ -456,24 +459,22 @@ export default function HomePage() {
         isLoading={isLoadingRoute}
       />
 
-      {/* Floating Top/Bottom Stats HUD & Elevation Profile (Desktop & Mobile) */}
+      {/* Floating Metrics HUD & Elevation Profile */}
       <div className="absolute right-4 bottom-4 md:bottom-6 z-30 max-w-sm w-full space-y-3 pointer-events-none">
-        {/* Elevation Profile (Conditional) */}
-        {showElevation && routeData && (
+        {showElevation && activeRouteData && (
           <div className="pointer-events-auto animate-in slide-in-from-bottom-3 fade-in duration-200">
             <ElevationProfile
-              profile={routeData.elevationProfile}
-              gainM={routeData.elevationGainM}
-              lossM={routeData.elevationLossM}
-              distanceKm={routeData.distanceKm}
+              profile={activeRouteData.elevationProfile}
+              gainM={activeRouteData.elevationGainM}
+              lossM={activeRouteData.elevationLossM}
+              distanceKm={activeRouteData.distanceKm}
             />
           </div>
         )}
 
-        {/* Live Running Metrics HUD */}
         <div className="pointer-events-auto">
           <StatsHud
-            routeData={routeData}
+            routeData={activeRouteData}
             paceSeconds={paceSeconds}
             onPaceChange={setPaceSeconds}
             onOpenExport={() => setIsExportOpen(true)}
@@ -484,11 +485,11 @@ export default function HomePage() {
       </div>
 
       {/* Export GPX / GeoJSON Modal */}
-      {routeData && (
+      {activeRouteData && (
         <ExportModal
           isOpen={isExportOpen}
           onClose={() => setIsExportOpen(false)}
-          routeData={routeData}
+          routeData={activeRouteData}
           paceSeconds={paceSeconds}
         />
       )}

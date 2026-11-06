@@ -132,7 +132,7 @@ export default function RouteMap({
       blueprintPolylineRef.current = null;
     }
 
-    if (blueprintCoords && blueprintCoords.length > 1 && showBlueprint) {
+    if (isArtMode && blueprintCoords && blueprintCoords.length > 1 && showBlueprint) {
       const latlngs = blueprintCoords.map((c) => [c.lat, c.lng] as [number, number]);
       const blueprint = L.polyline(latlngs, {
         color: '#06b6d4', // neon cyan
@@ -145,7 +145,7 @@ export default function RouteMap({
 
       blueprintPolylineRef.current = blueprint;
     }
-  }, [blueprintCoords, showBlueprint]);
+  }, [blueprintCoords, showBlueprint, isArtMode]);
 
   // Update routed polyline
   useEffect(() => {

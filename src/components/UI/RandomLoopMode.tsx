@@ -53,7 +53,7 @@ export default function RandomLoopMode({
       <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-700/60 space-y-2.5">
         <div className="flex items-center justify-between text-xs">
           <span className="font-semibold text-slate-300 flex items-center gap-1.5">
-            <Compass className="w-4 h-4 text-lime-400" /> Titik Awal & Akhir (Loop)
+            <Compass className="w-4 h-4 text-lime-400" /> Titik Start & Finish (100% Closed Loop)
           </span>
           <button
             onClick={onUseMyLocation}
@@ -65,9 +65,14 @@ export default function RandomLoopMode({
 
         <div className="text-xs text-slate-400 bg-slate-950/70 p-2.5 rounded-lg border border-slate-800">
           {startLocation ? (
-            <p className="font-mono text-slate-200">
-              Lat: {startLocation.lat.toFixed(5)}, Lng: {startLocation.lng.toFixed(5)}
-            </p>
+            <div className="space-y-1">
+              <p className="font-mono text-slate-200">
+                Lat: {startLocation.lat.toFixed(5)}, Lng: {startLocation.lng.toFixed(5)}
+              </p>
+              <p className="text-[10px] text-emerald-400 flex items-center gap-1 font-semibold">
+                <CheckCircle className="w-3 h-3" /> Dijamin rute mulai dan berakhir di titik yang sama
+              </p>
+            </div>
           ) : (
             <p className="text-amber-400/90 italic">
               Klik lokasi pada peta atau gunakan tombol GPS di atas untuk menentukan titik start/finish.

@@ -217,26 +217,39 @@ export default function GpsArtMode({
           </button>
         </div>
 
-        {/* Snap to Road Toggle */}
-        <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
-          <div className="text-xs">
-            <p className="font-semibold text-slate-200">Snap ke Jalan Terdekat (OSRM)</p>
-            <p className="text-[11px] text-slate-400">
-              {snapToRoads ? 'Mengikuti rute jalan kaki nyata' : 'Mengikuti outline bentuk murni'}
-            </p>
-          </div>
-          <button
-            onClick={() => onToggleSnap(!snapToRoads)}
-            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
-              snapToRoads ? 'bg-lime-500' : 'bg-slate-700'
-            }`}
-          >
-            <span
-              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-slate-950 shadow transition ${
-                snapToRoads ? 'translate-x-4' : 'translate-x-0'
+        {/* Route Snapping Mode Selector */}
+        <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
+          <p className="text-xs font-semibold text-slate-200">Presisi Bentuk Jalur Lari:</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => onToggleSnap(false)}
+              className={`p-2.5 rounded-xl border text-left transition ${
+                !snapToRoads
+                  ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.3)]'
+                  : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
               }`}
-            />
-          </button>
+            >
+              <p className="font-bold text-[11px] leading-tight">Presisi 100% (Murni)</p>
+              <p className="text-[10px] text-slate-400 font-normal mt-0.5">
+                Rekomendasi Strava Art: Gambar sempurna tanpa distorsi jalan.
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={() => onToggleSnap(true)}
+              className={`p-2.5 rounded-xl border text-left transition ${
+                snapToRoads
+                  ? 'bg-lime-500/20 border-lime-400 text-lime-300 shadow-[0_0_10px_rgba(163,230,53,0.3)]'
+                  : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              <p className="font-bold text-[11px] leading-tight">Snap Jalan Raya</p>
+              <p className="text-[10px] text-slate-400 font-normal mt-0.5">
+                Mengikuti jalan raya terdekat via OSRM.
+              </p>
+            </button>
+          </div>
         </div>
       </div>
 

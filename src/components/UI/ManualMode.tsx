@@ -74,9 +74,13 @@ export default function ManualMode({
             <Route className="w-4 h-4" />
           </div>
           <div>
-            <p className="text-xs font-semibold text-slate-200">Snap to Roads (OSRM Foot)</p>
-            <p className="text-[11px] text-slate-400">
-              {snapToRoads ? 'Mengikuti kontur jalan kaki / trotoar' : 'Garis lurus bebas (Free Drawing)'}
+            <p className="text-xs font-semibold text-slate-200">
+              {snapToRoads ? 'Smart Road Snap (Akurat)' : 'Garis Bebas (Direct Line)'}
+            </p>
+            <p className="text-[11px] text-slate-400 leading-tight">
+              {snapToRoads
+                ? 'Ikuti jalan terdekat (mencegah detour memutar di taman/gang)'
+                : 'Presisi lurus bebas untuk lapangan, stadion, atau pantai'}
             </p>
           </div>
         </div>
