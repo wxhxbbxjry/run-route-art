@@ -48,6 +48,7 @@ export default function HomePage() {
   const [manualWaypoints, setManualWaypoints] = useState<Waypoint[]>([]);
   const [manualRouteData, setManualRouteData] = useState<RouteData | null>(null);
   const [manualSnapToRoads, setManualSnapToRoads] = useState<boolean>(true);
+  const [allowContraflow, setAllowContraflow] = useState<boolean>(true); // Default true: Runners can run against traffic
 
   // 2. ISOLATED STATE: Random Loop Generator Mode
   const [loopStartLocation, setLoopStartLocation] = useState<LatLng | null>({
@@ -127,7 +128,11 @@ export default function HomePage() {
 
         if (updatedWaypoints.length >= 2) {
           setIsLoadingRoute(true);
-          const result = await fetchSmartManualRoute(updatedWaypoints, manualSnapToRoads);
+          const result = await fetchSmartManualRoute(
+            updatedWaypoints,
+            manualSnapToRoads,
+            allowContraflow
+          );
           setIsLoadingRoute(false);
 
           const built = buildRouteData(
@@ -157,7 +162,7 @@ export default function HomePage() {
         );
       }
     },
-    [currentMode, manualWaypoints, manualSnapToRoads, addToast]
+    [currentMode, manualWaypoints, manualSnapToRoads, allowContraflow, addToast]
   );
 
   // Manual Mode: Toggle Snap
@@ -166,12 +171,34 @@ export default function HomePage() {
       setManualSnapToRoads(newSnapState);
       if (manualWaypoints.length >= 2) {
         setIsLoadingRoute(true);
-        const result = await fetchSmartManualRoute(manualWaypoints, newSnapState);
+        const result = await fetchSmartManualRoute(
+          manualWaypoints,
+          newSnapState,
+          allowContraflow
+        );
         setIsLoadingRoute(false);
         setManualRouteData(buildRouteData(manualWaypoints, result, 'manual'));
       }
     },
-    [manualWaypoints]
+    [manualWaypoints, allowContraflow]
+  );
+
+  // Manual Mode: Toggle Contraflow (Lawan Arah)
+  const handleToggleContraflow = useCallback(
+    async (newContraflow: boolean) => {
+      setAllowContraflow(newContraflow);
+      if (manualWaypoints.length >= 2) {
+        setIsLoadingRoute(true);
+        const result = await fetchSmartManualRoute(
+          manualWaypoints,
+          manualSnapToRoads,
+          newContraflow
+        );
+        setIsLoadingRoute(false);
+        setManualRouteData(buildRouteData(manualWaypoints, result, 'manual'));
+      }
+    },
+    [manualWaypoints, manualSnapToRoads]
   );
 
   // Manual Mode: Undo
@@ -182,13 +209,17 @@ export default function HomePage() {
 
     if (updated.length >= 2) {
       setIsLoadingRoute(true);
-      const result = await fetchSmartManualRoute(updated, manualSnapToRoads);
+      const result = await fetchSmartManualRoute(
+        updated,
+        manualSnapToRoads,
+        allowContraflow
+      );
       setIsLoadingRoute(false);
       setManualRouteData(buildRouteData(updated, result, 'manual'));
     } else {
       setManualRouteData(null);
     }
-  }, [manualWaypoints, manualSnapToRoads]);
+  }, [manualWaypoints, manualSnapToRoads, allowContraflow]);
 
   // Manual Mode: Clear
   const handleClearManualWaypoints = useCallback(() => {
@@ -213,11 +244,15 @@ export default function HomePage() {
 
     setManualWaypoints(closedWaypoints);
     setIsLoadingRoute(true);
-    const result = await fetchSmartManualRoute(closedWaypoints, manualSnapToRoads);
+    const result = await fetchSmartManualRoute(
+      closedWaypoints,
+      manualSnapToRoads,
+      allowContraflow
+    );
     setIsLoadingRoute(false);
     setManualRouteData(buildRouteData(closedWaypoints, result, 'manual'));
     addToast('success', 'Loop Berhasil Ditutup', 'Rute kembali ke titik awal!');
-  }, [manualWaypoints, manualSnapToRoads, addToast]);
+  }, [manualWaypoints, manualSnapToRoads, allowContraflow, addToast]);
 
   // Manual Mode: Reverse Route
   const handleReverseManualRoute = useCallback(async () => {
@@ -225,11 +260,15 @@ export default function HomePage() {
     const reversed = [...manualWaypoints].reverse();
     setManualWaypoints(reversed);
     setIsLoadingRoute(true);
-    const result = await fetchSmartManualRoute(reversed, manualSnapToRoads);
+    const result = await fetchSmartManualRoute(
+      reversed,
+      manualSnapToRoads,
+      allowContraflow
+    );
     setIsLoadingRoute(false);
     setManualRouteData(buildRouteData(reversed, result, 'manual'));
     addToast('info', 'Arah Dibalik', 'Titik awal dan akhir rute telah ditukar.');
-  }, [manualWaypoints, manualSnapToRoads, addToast]);
+  }, [manualWaypoints, manualSnapToRoads, allowContraflow, addToast]);
 
   // Random Loop: Generate Loop
   const handleGenerateLoop = useCallback(
@@ -244,7 +283,12 @@ export default function HomePage() {
       setLoopHeadingOffset(heading);
 
       // High-accuracy natural loop generator
-      const result = await generateAccurateLoop(loopStartLocation, targetDistanceKm, heading);
+      const result = await generateAccurateLoop(
+        loopStartLocation,
+        targetDistanceKm,
+        heading,
+        allowContraflow
+      );
       setIsLoadingRoute(false);
 
       if (result.error) {
@@ -275,7 +319,7 @@ export default function HomePage() {
         `Jarak: ${result.distanceKm.toFixed(2)} km (Akurasi ${accuracy}%). Start & Finish 100% bertemu!`
       );
     },
-    [loopStartLocation, targetDistanceKm, loopHeadingOffset, addToast]
+    [loopStartLocation, targetDistanceKm, loopHeadingOffset, allowContraflow, addToast]
   );
 
   // Random Loop: Re-roll
@@ -313,7 +357,7 @@ export default function HomePage() {
     setArtWaypoints(artWps);
 
     // Route calculation via smart GPS Art engine
-    const result = await generateGpsArtRoute(transformed, artSnapToRoads);
+    const result = await generateGpsArtRoute(transformed, artSnapToRoads, allowContraflow);
     setIsLoadingRoute(false);
 
     const built = buildRouteData(artWps, result, 'art', artScaleKm, shapeDef.name);
@@ -344,6 +388,7 @@ export default function HomePage() {
     artScaleKm,
     artRotationDeg,
     artSnapToRoads,
+    allowContraflow,
     addToast,
   ]);
 
@@ -438,6 +483,8 @@ export default function HomePage() {
         onClearWaypoints={handleClearManualWaypoints}
         onCloseLoop={handleCloseManualLoop}
         onReverseRoute={handleReverseManualRoute}
+        allowContraflow={allowContraflow}
+        onToggleContraflow={handleToggleContraflow}
         // Random loop props
         startLocation={loopStartLocation}
         targetDistanceKm={targetDistanceKm}

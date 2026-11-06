@@ -22,6 +22,8 @@ interface SidebarProps {
   routeData: RouteData | null;
   snapToRoads: boolean;
   onToggleSnap: (snap: boolean) => void;
+  allowContraflow?: boolean;
+  onToggleContraflow?: (allow: boolean) => void;
   onUndoWaypoint: () => void;
   onClearWaypoints: () => void;
   onCloseLoop: () => void;
@@ -55,6 +57,8 @@ export default function Sidebar({
   routeData,
   snapToRoads,
   onToggleSnap,
+  allowContraflow,
+  onToggleContraflow,
   onUndoWaypoint,
   onClearWaypoints,
   onCloseLoop,
@@ -155,6 +159,8 @@ export default function Sidebar({
               routeData={routeData}
               snapToRoads={snapToRoads}
               onToggleSnap={onToggleSnap}
+              allowContraflow={allowContraflow}
+              onToggleContraflow={onToggleContraflow}
               onUndo={onUndoWaypoint}
               onClear={onClearWaypoints}
               onCloseLoop={onCloseLoop}
@@ -282,6 +288,8 @@ export default function Sidebar({
                 routeData={routeData}
                 snapToRoads={snapToRoads}
                 onToggleSnap={onToggleSnap}
+                allowContraflow={allowContraflow}
+                onToggleContraflow={onToggleContraflow}
                 onUndo={onUndoWaypoint}
                 onClear={onClearWaypoints}
                 onCloseLoop={onCloseLoop}

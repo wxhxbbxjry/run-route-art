@@ -11,6 +11,7 @@ import {
   Zap,
   MousePointerClick,
   CheckCircle2,
+  Footprints,
 } from 'lucide-react';
 
 interface ManualModeProps {
@@ -18,6 +19,8 @@ interface ManualModeProps {
   routeData: RouteData | null;
   snapToRoads: boolean;
   onToggleSnap: (snap: boolean) => void;
+  allowContraflow?: boolean;
+  onToggleContraflow?: (allow: boolean) => void;
   onUndo: () => void;
   onClear: () => void;
   onCloseLoop: () => void;
@@ -30,6 +33,8 @@ export default function ManualMode({
   routeData,
   snapToRoads,
   onToggleSnap,
+  allowContraflow = true,
+  onToggleContraflow,
   onUndo,
   onClear,
   onCloseLoop,
@@ -98,6 +103,44 @@ export default function ManualMode({
           />
         </button>
       </div>
+
+      {/* Runner Contraflow / Bebas Lawan Arah Toggle */}
+      {snapToRoads && onToggleContraflow && (
+        <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div
+              className={`p-1.5 rounded-lg ${
+                allowContraflow ? 'bg-cyan-500/20 text-cyan-400' : 'bg-slate-800 text-slate-400'
+              }`}
+            >
+              <Footprints className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-slate-200">
+                Bebas Lawan Arah (Runner Friendly)
+              </p>
+              <p className="text-[11px] text-slate-400 leading-tight">
+                {allowContraflow
+                  ? 'Boleh lari di trotoar dua arah (abaikan satu arah mobil)'
+                  : 'Patuhi arah rambu satu arah kendaraan'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => onToggleContraflow(!allowContraflow)}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+              allowContraflow ? 'bg-cyan-500' : 'bg-slate-700'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-slate-950 shadow ring-0 transition duration-200 ease-in-out ${
+                allowContraflow ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+      )}
 
       {/* Waypoints Counter & Status */}
       <div className="flex items-center justify-between text-xs px-1 text-slate-400">
