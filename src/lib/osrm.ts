@@ -1,7 +1,9 @@
 import { LatLng, RouteData, Waypoint } from './types';
 import { haversineDistance, calculatePolylineDistance, generateRealisticElevation } from './geo';
 
-const OSRM_BASE_URL = 'https://router.project-osrm.org/route/v1/foot';
+const OSRM_FOOT_URL = 'https://router.project-osrm.org/route/v1/foot';
+const OSRM_BIKE_URL = 'https://router.project-osrm.org/route/v1/bike';
+const OSRM_NEAREST_BIKE_URL = 'https://router.project-osrm.org/nearest/v1/bike';
 
 export interface RouteFetchResult {
   coordinates: LatLng[];
@@ -12,65 +14,112 @@ export interface RouteFetchResult {
 }
 
 /**
- * Fetches an OSRM foot route between two points in a specific direction with timeout.
+ * Snaps a target point to the nearest open, accessible public road.
+ * Prevents anchor waypoints from landing inside private compounds or vital national objects.
  */
-async function fetchSingleSegment(p1: LatLng, p2: LatLng): Promise<LatLng[] | null> {
-  const coordString = `${p1.lng.toFixed(6)},${p1.lat.toFixed(6)};${p2.lng.toFixed(6)},${p2.lat.toFixed(6)}`;
-  const url = `${OSRM_BASE_URL}/${coordString}?overview=full&geometries=geojson`;
-
+async function snapToPublicStreet(point: LatLng): Promise<LatLng> {
   try {
+    const url = `${OSRM_NEAREST_BIKE_URL}/${point.lng.toFixed(6)},${point.lat.toFixed(6)}?number=1`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4500);
-
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: { Accept: 'application/json' },
-    });
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+    const res = await fetch(url, { signal: controller.signal, headers: { Accept: 'application/json' } });
     clearTimeout(timeoutId);
 
-    if (!response.ok) return null;
-    const data = await response.json();
-
-    if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
-      const rawCoords: [number, number][] = data.routes[0].geometry.coordinates;
-      return rawCoords.map(([lng, lat]) => ({ lat, lng }));
+    if (res.ok) {
+      const data = await res.json();
+      if (data.code === 'Ok' && data.waypoints && data.waypoints.length > 0) {
+        const [lng, lat] = data.waypoints[0].location;
+        const dist = haversineDistance(point, { lat, lng });
+        if (dist <= 0.45) {
+          return { lat, lng };
+        }
+      }
     }
   } catch {
-    // ignore, will fallback
+    // fallback
   }
-  return null;
+  return point;
+}
+
+/**
+ * Fetches an OSRM route segment between two points.
+ * When avoidSmallAlleys is true:
+ * First attempts road-based network (bike profile), which adheres strictly to arterial, secondary,
+ * tertiary, and wide residential streets while avoiding tiny gangway alleys, steps, private gated compounds,
+ * and restricted national vital objects. Falls back to foot profile if road routing fails.
+ */
+async function fetchSingleSegment(
+  p1: LatLng,
+  p2: LatLng,
+  avoidSmallAlleys: boolean = true
+): Promise<LatLng[] | null> {
+  const coordString = `${p1.lng.toFixed(6)},${p1.lat.toFixed(6)};${p2.lng.toFixed(6)},${p2.lat.toFixed(6)}`;
+
+  const tryUrl = async (baseUrl: string): Promise<LatLng[] | null> => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const url = `${baseUrl}/${coordString}?overview=full&geometries=geojson`;
+
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { Accept: 'application/json' },
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) return null;
+      const data = await response.json();
+
+      if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+        const rawCoords: [number, number][] = data.routes[0].geometry.coordinates;
+        return rawCoords.map(([lng, lat]) => ({ lat, lng }));
+      }
+    } catch {
+      // ignore, will fallback
+    }
+    return null;
+  };
+
+  if (avoidSmallAlleys) {
+    // Try bike profile first (strictly filters out pedestrian alleys, steps, private grounds)
+    const bikeCoords = await tryUrl(OSRM_BIKE_URL);
+    if (bikeCoords && bikeCoords.length > 1) {
+      return bikeCoords;
+    }
+  }
+
+  // Fallback to foot profile (allows pedestrian paths in parks/stadiums)
+  return await tryUrl(OSRM_FOOT_URL);
 }
 
 /**
  * Runner Bidirectional Segment Router:
- * Because runners run on sidewalks / shoulders, one-way vehicle traffic restrictions
- * do not restrict runners (lawan arah / contraflow is normal for runners).
- * This function queries forward AND reverse directions simultaneously, picking
- * the shortest natural street path and reversing the coordinate list if necessary.
+ * Allows runners to run on sidewalks / road shoulders against one-way traffic (lawan arah).
+ * Also respects avoidSmallAlleys to avoid narrow gang senggol and restricted private compounds.
  */
 export async function fetchBidirectionalSegment(
   p1: LatLng,
   p2: LatLng,
-  allowContraflow: boolean = true
+  allowContraflow: boolean = true,
+  avoidSmallAlleys: boolean = true
 ): Promise<LatLng[]> {
   if (!allowContraflow) {
-    const res = await fetchSingleSegment(p1, p2);
+    const res = await fetchSingleSegment(p1, p2, avoidSmallAlleys);
     return res || [p1, p2];
   }
 
-  // Query both directions in parallel for zero added latency
+  // Query forward and reverse simultaneously for instant response
   const [forwardCoords, reverseCoords] = await Promise.all([
-    fetchSingleSegment(p1, p2),
-    fetchSingleSegment(p2, p1),
+    fetchSingleSegment(p1, p2, avoidSmallAlleys),
+    fetchSingleSegment(p2, p1, avoidSmallAlleys),
   ]);
 
   const forwardDist = forwardCoords ? calculatePolylineDistance(forwardCoords) : Infinity;
   const reverseDist = reverseCoords ? calculatePolylineDistance(reverseCoords) : Infinity;
 
-  // If running against one-way traffic is the direct route along the street:
+  // Pick the shortest natural street path (contraflow supported)
   if (reverseCoords && reverseDist < forwardDist) {
-    const reversed = [...reverseCoords].reverse();
-    return reversed;
+    return [...reverseCoords].reverse();
   }
 
   if (forwardCoords) {
@@ -86,14 +135,14 @@ export async function fetchBidirectionalSegment(
 
 /**
  * Smart Manual Route Builder:
- * Evaluates segment-by-segment between tapped waypoints with Runner Contraflow (lawan arah) enabled.
- * If OSRM takes an absurd detour (> 2.2x direct distance), it falls back to direct connection,
- * and always anchors to the tapped pin!
+ * Evaluates segment-by-segment between tapped waypoints with Runner Contraflow (lawan arah) enabled
+ * and intelligent small-alley / private-area avoidance.
  */
 export async function fetchSmartManualRoute(
   waypoints: LatLng[],
   snapToRoads: boolean = true,
-  allowContraflow: boolean = true
+  allowContraflow: boolean = true,
+  avoidSmallAlleys: boolean = true
 ): Promise<RouteFetchResult> {
   if (waypoints.length < 2) {
     return {
@@ -104,7 +153,6 @@ export async function fetchSmartManualRoute(
     };
   }
 
-  // Straight line mode
   if (!snapToRoads) {
     const directDist = calculatePolylineDistance(waypoints);
     return {
@@ -123,19 +171,21 @@ export async function fetchSmartManualRoute(
     const endPt = waypoints[i + 1];
     const directDistKm = haversineDistance(startPt, endPt);
 
-    // If points are very close (< 20m), connect directly
     if (directDistKm < 0.02) {
       finalCoordinates.push(endPt);
       continue;
     }
 
-    // Use bidirectional routing so running against one-way traffic is completely allowed!
-    const segmentCoords = await fetchBidirectionalSegment(startPt, endPt, allowContraflow);
+    const segmentCoords = await fetchBidirectionalSegment(
+      startPt,
+      endPt,
+      allowContraflow,
+      avoidSmallAlleys
+    );
 
     if (segmentCoords && segmentCoords.length > 1) {
       const segmentDistKm = calculatePolylineDistance(segmentCoords);
 
-      // Check if OSRM took an absurd detour (> 2.2x)
       if (segmentDistKm <= directDistKm * 2.2) {
         hasAnySnapped = true;
         for (let j = 0; j < segmentCoords.length; j++) {
@@ -156,7 +206,7 @@ export async function fetchSmartManualRoute(
       }
     }
 
-    // Fallback for this segment: clean direct line anchored to exact tapped point
+    // Direct fallback anchored to exact tapped point
     finalCoordinates.push(endPt);
   }
 
@@ -179,7 +229,8 @@ export async function generateAccurateLoop(
   start: LatLng,
   targetKm: number,
   headingDeg: number = 45,
-  allowContraflow: boolean = true
+  allowContraflow: boolean = true,
+  avoidSmallAlleys: boolean = true
 ): Promise<RouteFetchResult> {
   const kmPerLat = 111.139;
   const kmPerLng = kmPerLat * Math.cos((start.lat * Math.PI) / 180);
@@ -187,7 +238,7 @@ export async function generateAccurateLoop(
   // Initial road winding factor for urban circuits
   let radiusKm = targetKm / 12.8;
 
-  const buildCircuitAnchors = (r: number, heading: number): LatLng[] => {
+  const buildCircuitAnchors = async (r: number, heading: number): Promise<LatLng[]> => {
     const headingRad = (heading * Math.PI) / 180;
     const cLat = start.lat + (r * Math.cos(headingRad)) / kmPerLat;
     const cLng = start.lng + (r * Math.sin(headingRad)) / (kmPerLng || 1);
@@ -196,14 +247,19 @@ export async function generateAccurateLoop(
     const a1 = a0 + (2 * Math.PI) / 3;
     const a2 = a0 + (4 * Math.PI) / 3;
 
-    const wp1: LatLng = {
+    let wp1: LatLng = {
       lat: cLat + (r * Math.cos(a1)) / kmPerLat,
       lng: cLng + (r * Math.sin(a1)) / (kmPerLng || 1),
     };
-    const wp2: LatLng = {
+    let wp2: LatLng = {
       lat: cLat + (r * Math.cos(a2)) / kmPerLat,
       lng: cLng + (r * Math.sin(a2)) / (kmPerLng || 1),
     };
+
+    if (avoidSmallAlleys) {
+      // Snap anchors to open public thoroughfares to avoid private compounds or vital national objects
+      [wp1, wp2] = await Promise.all([snapToPublicStreet(wp1), snapToPublicStreet(wp2)]);
+    }
 
     return [start, wp1, wp2, start];
   };
@@ -212,7 +268,12 @@ export async function generateAccurateLoop(
     const coords: LatLng[] = [start];
 
     for (let i = 0; i < anchors.length - 1; i++) {
-      const seg = await fetchBidirectionalSegment(anchors[i], anchors[i + 1], allowContraflow);
+      const seg = await fetchBidirectionalSegment(
+        anchors[i],
+        anchors[i + 1],
+        allowContraflow,
+        avoidSmallAlleys
+      );
       for (const pt of seg) {
         if (coords.length > 0 && haversineDistance(coords[coords.length - 1], pt) < 0.005) {
           continue;
@@ -230,7 +291,7 @@ export async function generateAccurateLoop(
   };
 
   // Pass 1
-  let anchors = buildCircuitAnchors(radiusKm, headingDeg);
+  let anchors = await buildCircuitAnchors(radiusKm, headingDeg);
   let coords = await routeAnchors(anchors);
   let distKm = calculatePolylineDistance(coords);
 
@@ -238,7 +299,7 @@ export async function generateAccurateLoop(
   if (Math.abs(distKm - targetKm) / targetKm > 0.08) {
     const calibrationFactor = Math.min(1.5, Math.max(0.65, targetKm / (distKm || 1)));
     radiusKm *= calibrationFactor;
-    anchors = buildCircuitAnchors(radiusKm, headingDeg);
+    anchors = await buildCircuitAnchors(radiusKm, headingDeg);
     const calibratedCoords = await routeAnchors(anchors);
     const calibratedDist = calculatePolylineDistance(calibratedCoords);
 
@@ -264,7 +325,8 @@ export async function generateAccurateLoop(
 export async function generateGpsArtRoute(
   shapeCoordinates: LatLng[],
   snapToRoads: boolean = false,
-  allowContraflow: boolean = true
+  allowContraflow: boolean = true,
+  avoidSmallAlleys: boolean = true
 ): Promise<RouteFetchResult> {
   if (shapeCoordinates.length < 2) {
     return {
@@ -275,30 +337,30 @@ export async function generateGpsArtRoute(
     };
   }
 
-  // Pure GPS Art (Recommended for Strava/Garmin Art)
-  // Keeps the exact recognizable shape!
+  // Pure recognized geometric art shape mode
   if (!snapToRoads) {
-    const dist = calculatePolylineDistance(shapeCoordinates);
+    const directDist = calculatePolylineDistance(shapeCoordinates);
     return {
       coordinates: shapeCoordinates,
-      distanceKm: dist,
+      distanceKm: directDist,
       isSnapped: false,
       source: 'direct',
     };
   }
 
-  // Snapped to roads: sample key contour vertices and route with contraflow
-  const keyPoints: LatLng[] = [shapeCoordinates[0]];
-  const total = shapeCoordinates.length;
-  const numSamples = Math.min(8, total);
-  const step = Math.floor(total / numSamples);
+  // Snapped to roads: sub-sample shape points and route bidirectionally
+  const maxSamplePoints = Math.min(14, shapeCoordinates.length);
+  const step = Math.max(1, Math.floor(shapeCoordinates.length / maxSamplePoints));
+  const samplePoints: LatLng[] = [];
 
-  for (let i = 1; i < numSamples; i++) {
-    keyPoints.push(shapeCoordinates[i * step]);
+  for (let i = 0; i < shapeCoordinates.length; i += step) {
+    samplePoints.push(shapeCoordinates[i]);
   }
-  keyPoints.push(shapeCoordinates[total - 1]);
+  if (samplePoints[samplePoints.length - 1] !== shapeCoordinates[shapeCoordinates.length - 1]) {
+    samplePoints.push(shapeCoordinates[shapeCoordinates.length - 1]);
+  }
 
-  return fetchSmartManualRoute(keyPoints, true, allowContraflow);
+  return await fetchSmartManualRoute(samplePoints, true, allowContraflow, avoidSmallAlleys);
 }
 
 /**

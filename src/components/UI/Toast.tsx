@@ -5,7 +5,7 @@ import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 
 export interface ToastMessage {
   id: string;
-  type: 'success' | 'warning' | 'info';
+  type: 'success' | 'warning' | 'info' | 'error';
   title: string;
   description?: string;
 }
@@ -26,6 +26,8 @@ export default function Toast({ toasts, onDismiss }: ToastProps) {
           className={`pointer-events-auto p-3.5 rounded-2xl glass-panel shadow-2xl border flex items-start gap-3 animate-in slide-in-from-top-3 fade-in duration-200 ${
             toast.type === 'success'
               ? 'border-emerald-500/40 text-emerald-300'
+              : toast.type === 'error'
+              ? 'border-rose-500/40 text-rose-300'
               : toast.type === 'warning'
               ? 'border-amber-500/40 text-amber-300'
               : 'border-cyan-500/40 text-cyan-300'
@@ -33,6 +35,7 @@ export default function Toast({ toasts, onDismiss }: ToastProps) {
         >
           <div className="mt-0.5 shrink-0">
             {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
+            {toast.type === 'error' && <AlertTriangle className="w-5 h-5 text-rose-400" />}
             {toast.type === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-400" />}
             {toast.type === 'info' && <Info className="w-5 h-5 text-cyan-400" />}
           </div>

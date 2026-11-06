@@ -269,3 +269,86 @@ export function getCoordinateAtDistance(
 
   return coordinates[coordinates.length - 1];
 }
+
+/**
+ * Computes a continuous vibrant gradient color for route distance progression.
+ * 0% (Start: Electric Cyan) -> 25% (Emerald) -> 50% (Neon Lime) -> 75% (Amber) -> 100% (Finish: Electric Rose)
+ */
+export function getDistanceGradientColor(ratio: number): string {
+  const t = Math.max(0, Math.min(1, ratio));
+  const stops = [
+    { t: 0.0, r: 6, g: 182, b: 212 },   // #06b6d4 Cyan
+    { t: 0.25, r: 16, g: 185, b: 129 }, // #10b981 Emerald
+    { t: 0.5, r: 163, g: 230, b: 53 },  // #a3e635 Neon Lime
+    { t: 0.75, r: 245, g: 158, b: 11 }, // #f59e0b Amber
+    { t: 1.0, r: 244, g: 63, b: 94 },   // #f43f5e Electric Rose
+  ];
+
+  for (let i = 0; i < stops.length - 1; i++) {
+    const s1 = stops[i];
+    const s2 = stops[i + 1];
+    if (t >= s1.t && t <= s2.t) {
+      const localRatio = (t - s1.t) / (s2.t - s1.t);
+      const r = Math.round(s1.r + (s2.r - s1.r) * localRatio);
+      const g = Math.round(s1.g + (s2.g - s1.g) * localRatio);
+      const b = Math.round(s1.b + (s2.b - s1.b) * localRatio);
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+  }
+  return '#f43f5e';
+}
+
+/**
+ * Splits coordinates into gradient segments with distance progression info.
+ */
+export interface GradientSegment {
+  coordinates: LatLng[];
+  color: string;
+  fraction: number;
+}
+
+export function buildGradientSegments(
+  coordinates: LatLng[],
+  maxSegments: number = 40
+): GradientSegment[] {
+  if (!coordinates || coordinates.length < 2) return [];
+
+  const cumDists: number[] = [0];
+  let totalDist = 0;
+  for (let i = 0; i < coordinates.length - 1; i++) {
+    totalDist += haversineDistance(coordinates[i], coordinates[i + 1]);
+    cumDists.push(totalDist);
+  }
+
+  if (totalDist === 0) {
+    return [
+      {
+        coordinates,
+        color: '#a3e635',
+        fraction: 0,
+      },
+    ];
+  }
+
+  const numSegments = Math.min(maxSegments, coordinates.length - 1);
+  const chunkSize = Math.max(1, Math.floor((coordinates.length - 1) / numSegments));
+  const segments: GradientSegment[] = [];
+
+  for (let i = 0; i < coordinates.length - 1; i += chunkSize) {
+    const endIndex = Math.min(coordinates.length - 1, i + chunkSize);
+    const segPoints = coordinates.slice(i, endIndex + 1);
+    const avgDist = (cumDists[i] + cumDists[endIndex]) / 2;
+    const fraction = avgDist / totalDist;
+    const color = getDistanceGradientColor(fraction);
+
+    segments.push({
+      coordinates: segPoints,
+      color,
+      fraction,
+    });
+
+    if (endIndex >= coordinates.length - 1) break;
+  }
+
+  return segments;
+}

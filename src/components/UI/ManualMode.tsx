@@ -14,6 +14,8 @@ import {
   CheckCircle2,
   Footprints,
   ArrowLeftRight,
+  ShieldCheck,
+  FolderOpen,
 } from 'lucide-react';
 
 interface ManualModeProps {
@@ -23,6 +25,8 @@ interface ManualModeProps {
   onToggleSnap: (snap: boolean) => void;
   allowContraflow?: boolean;
   onToggleContraflow?: (allow: boolean) => void;
+  avoidSmallAlleys?: boolean;
+  onToggleAvoidAlleys?: (avoid: boolean) => void;
   onUndo: () => void;
   onRedo?: () => void;
   canRedo?: boolean;
@@ -30,6 +34,7 @@ interface ManualModeProps {
   onCloseLoop: () => void;
   onReverse: () => void;
   onClear: () => void;
+  onOpenSavedRoutes?: () => void;
   isLoading: boolean;
 }
 
@@ -40,6 +45,8 @@ export default function ManualMode({
   onToggleSnap,
   allowContraflow = true,
   onToggleContraflow,
+  avoidSmallAlleys = true,
+  onToggleAvoidAlleys,
   onUndo,
   onRedo,
   canRedo = false,
@@ -47,6 +54,7 @@ export default function ManualMode({
   onCloseLoop,
   onReverse,
   onClear,
+  onOpenSavedRoutes,
   isLoading,
 }: ManualModeProps) {
   const isLoopClosed =
@@ -150,6 +158,44 @@ export default function ManualMode({
         </div>
       )}
 
+      {/* Avoid Small Alleys & Private Zones Toggle (Request 1) */}
+      {snapToRoads && onToggleAvoidAlleys && (
+        <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div
+              className={`p-1.5 rounded-lg ${
+                avoidSmallAlleys ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-slate-200">
+                Hindari Gang Sempit & Area Privat
+              </p>
+              <p className="text-[11px] text-slate-400 leading-tight">
+                {avoidSmallAlleys
+                  ? 'Prioritaskan jalan raya & ruas terbuka (aman & bebas portal)'
+                  : 'Boleh melewati jalan tikus & gang kecil perkampungan'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => onToggleAvoidAlleys(!avoidSmallAlleys)}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+              avoidSmallAlleys ? 'bg-emerald-500' : 'bg-slate-700'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-slate-950 shadow ring-0 transition duration-200 ease-in-out ${
+                avoidSmallAlleys ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+      )}
+
       {/* Waypoints Counter & Status */}
       <div className="flex items-center justify-between text-xs px-1 text-slate-400">
         <span className="flex items-center gap-1.5">
@@ -222,6 +268,17 @@ export default function ManualMode({
           <span>Hapus Semua</span>
         </button>
       </div>
+
+      {/* Import / Saved Routes Manager Quick Action */}
+      {onOpenSavedRoutes && (
+        <button
+          onClick={onOpenSavedRoutes}
+          className="w-full py-2.5 px-3 rounded-xl bg-slate-900/90 hover:bg-slate-850 text-slate-200 hover:text-white border border-slate-700/70 font-semibold text-xs flex items-center justify-center gap-2 transition active:scale-95 shadow-sm"
+        >
+          <FolderOpen className="w-4 h-4 text-lime-400" />
+          <span>Kelola Rute & Impor File GPX</span>
+        </button>
+      )}
 
       {isLoading && (
         <div className="flex items-center justify-center gap-2 text-xs text-lime-400 py-1 font-medium">

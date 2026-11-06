@@ -53,3 +53,11 @@ export interface TileLayerOption {
   maxZoom: number;
   subdomains?: string[];
 }
+
+export interface SavedRoute {
+  id: string;
+  name: string;
+  createdAt: number;
+  routeData: RouteData;
+  paceSeconds: number;
+}

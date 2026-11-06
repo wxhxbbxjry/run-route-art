@@ -155,3 +155,142 @@ export function downloadFile(content: string, filename: string, mimeType: string
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+export interface ParsedGpxResult {
+  name: string;
+  coordinates: { lat: number; lng: number }[];
+  elevationProfile: { distanceKm: number; elevationM: number }[];
+  totalDistanceKm: number;
+  elevationGainM: number;
+  elevationLossM: number;
+}
+
+/**
+ * Parses GPX 1.0/1.1 XML string and extracts tracks, routes, waypoints, elevations, and distances.
+ */
+export function parseGpx(gpxText: string): ParsedGpxResult | null {
+  if (!gpxText || typeof gpxText !== 'string') return null;
+
+  const rawPoints: { lat: number; lng: number; ele?: number }[] = [];
+  let name = 'Rute GPX Terimpor';
+
+  // 1. Try DOMParser (standard in modern browsers)
+  if (typeof window !== 'undefined' && window.DOMParser) {
+    try {
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(gpxText, 'text/xml');
+
+      // Check parse errors
+      const parserError = xmlDoc.querySelector('parsererror');
+      if (!parserError) {
+        // Extract route/track name
+        const nameNode =
+          xmlDoc.querySelector('trk > name') ||
+          xmlDoc.querySelector('metadata > name') ||
+          xmlDoc.querySelector('rte > name');
+        if (nameNode && nameNode.textContent) {
+          name = nameNode.textContent.trim();
+        }
+
+        // Extract track points <trkpt> or route points <rtept>
+        const ptNodes = xmlDoc.querySelectorAll('trkpt, rtept, wpt');
+        ptNodes.forEach((node) => {
+          const lat = parseFloat(node.getAttribute('lat') || '');
+          const lon = parseFloat(node.getAttribute('lon') || '');
+          if (!isNaN(lat) && !isNaN(lon)) {
+            const eleNode = node.querySelector('ele');
+            const ele = eleNode && eleNode.textContent ? parseFloat(eleNode.textContent) : undefined;
+            rawPoints.push({ lat, lng: lon, ele: isNaN(ele as number) ? undefined : ele });
+          }
+        });
+      }
+    } catch {
+      // fallback to regex below
+    }
+  }
+
+  // 2. Fallback regex parser if DOMParser failed or empty
+  if (rawPoints.length === 0) {
+    const nameMatch = gpxText.match(/<name>([^<]+)<\/name>/i);
+    if (nameMatch && nameMatch[1]) {
+      name = nameMatch[1].trim();
+    }
+
+    const ptRegex = /<(?:trkpt|rtept|wpt)\s+[^>]*lat=["']([^"']+)["'][^>]*lon=["']([^"']+)["'][^>]*>([\s\S]*?)<\/(?:trkpt|rtept|wpt)>/gi;
+    let match: RegExpExecArray | null;
+
+    while ((match = ptRegex.exec(gpxText)) !== null) {
+      const lat = parseFloat(match[1]);
+      const lng = parseFloat(match[2]);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        const body = match[3];
+        const eleMatch = body.match(/<ele>([^<]+)<\/ele>/i);
+        const ele = eleMatch ? parseFloat(eleMatch[1]) : undefined;
+        rawPoints.push({ lat, lng, ele });
+      }
+    }
+
+    // Secondary fallback if self-closing tags
+    if (rawPoints.length === 0) {
+      const selfCloseRegex = /<(?:trkpt|rtept|wpt)\s+[^>]*lat=["']([^"']+)["'][^>]*lon=["']([^"']+)["'][^>]*\/>/gi;
+      while ((match = selfCloseRegex.exec(gpxText)) !== null) {
+        const lat = parseFloat(match[1]);
+        const lng = parseFloat(match[2]);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          rawPoints.push({ lat, lng });
+        }
+      }
+    }
+  }
+
+  if (rawPoints.length < 2) return null;
+
+  // Filter duplicate points in series
+  const cleanCoordinates: { lat: number; lng: number }[] = [];
+  const cleanElevations: number[] = [];
+  for (let i = 0; i < rawPoints.length; i++) {
+    const p = rawPoints[i];
+    if (
+      cleanCoordinates.length > 0 &&
+      Math.abs(cleanCoordinates[cleanCoordinates.length - 1].lat - p.lat) < 0.000005 &&
+      Math.abs(cleanCoordinates[cleanCoordinates.length - 1].lng - p.lng) < 0.000005
+    ) {
+      continue;
+    }
+    cleanCoordinates.push({ lat: p.lat, lng: p.lng });
+    cleanElevations.push(p.ele ?? 15);
+  }
+
+  if (cleanCoordinates.length < 2) return null;
+
+  // Calculate cumulative distance and elevation gain/loss
+  let totalDistanceKm = 0;
+  let gainM = 0;
+  let lossM = 0;
+  const elevationProfile: { distanceKm: number; elevationM: number }[] = [
+    { distanceKm: 0, elevationM: cleanElevations[0] },
+  ];
+
+  for (let i = 1; i < cleanCoordinates.length; i++) {
+    const segDist = haversineDistance(cleanCoordinates[i - 1], cleanCoordinates[i]);
+    totalDistanceKm += segDist;
+
+    const diff = cleanElevations[i] - cleanElevations[i - 1];
+    if (diff > 0) gainM += diff;
+    else lossM += Math.abs(diff);
+
+    elevationProfile.push({
+      distanceKm: totalDistanceKm,
+      elevationM: cleanElevations[i],
+    });
+  }
+
+  return {
+    name,
+    coordinates: cleanCoordinates,
+    elevationProfile,
+    totalDistanceKm,
+    elevationGainM: Math.round(gainM),
+    elevationLossM: Math.round(lossM),
+  };
+}

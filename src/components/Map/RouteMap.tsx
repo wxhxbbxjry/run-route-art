@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import L from 'leaflet';
 import { LatLng, Waypoint, RouteData, TileLayerId } from '@/lib/types';
 import { TILE_LAYERS } from '@/lib/layers';
+import { buildGradientSegments } from '@/lib/geo';
 import {
   Layers,
   Crosshair,
@@ -21,6 +22,7 @@ interface RouteMapProps {
   onTileChange: (tile: TileLayerId) => void;
   onMapClick: (latlng: LatLng) => void;
   onWaypointDrag?: (index: number, latlng: LatLng) => void;
+  onCenterDrag?: (latlng: LatLng) => void;
   onWaypointDelete?: (index: number) => void;
   centerLocation?: LatLng | null;
   isArtMode?: boolean;
@@ -37,6 +39,7 @@ export default function RouteMap({
   onTileChange,
   onMapClick,
   onWaypointDrag,
+  onCenterDrag,
   onWaypointDelete,
   centerLocation,
   isArtMode = false,
@@ -46,8 +49,7 @@ export default function RouteMap({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
-  const routePolylineRef = useRef<L.Polyline | null>(null);
-  const routeGlowPolylineRef = useRef<L.Polyline | null>(null);
+  const routeGroupRef = useRef<L.LayerGroup | null>(null);
   const blueprintPolylineRef = useRef<L.Polyline | null>(null);
   const markersGroupRef = useRef<L.LayerGroup | null>(null);
   const hoverMarkerRef = useRef<L.Marker | null>(null);
@@ -85,6 +87,10 @@ export default function RouteMap({
       subdomains: tileConfig.subdomains || ['a', 'b', 'c'],
     }).addTo(map);
     tileLayerRef.current = tileLayer;
+
+    // Route layer group (Distance Gradient segments)
+    const routeGroup = L.layerGroup().addTo(map);
+    routeGroupRef.current = routeGroup;
 
     // Markers layer group
     const markersGroup = L.layerGroup().addTo(map);
@@ -154,43 +160,38 @@ export default function RouteMap({
     }
   }, [blueprintCoords, showBlueprint, isArtMode]);
 
-  // Update routed polyline
+  // Update routed polyline with Distance Gradient (Gradasi Warna Sesuai Jarak)
   useEffect(() => {
     const map = mapInstanceRef.current;
-    if (!map) return;
+    const routeGroup = routeGroupRef.current;
+    if (!map || !routeGroup) return;
 
-    // Clean previous polylines
-    if (routeGlowPolylineRef.current) {
-      map.removeLayer(routeGlowPolylineRef.current);
-      routeGlowPolylineRef.current = null;
-    }
-    if (routePolylineRef.current) {
-      map.removeLayer(routePolylineRef.current);
-      routePolylineRef.current = null;
-    }
+    routeGroup.clearLayers();
 
     if (routeData && routeData.coordinates.length > 1) {
-      const latlngs = routeData.coordinates.map((c) => [c.lat, c.lng] as [number, number]);
+      const gradientSegments = buildGradientSegments(routeData.coordinates, 45);
 
-      // Glow effect background polyline
-      const glowPolyline = L.polyline(latlngs, {
-        color: routeData.isSnapped ? '#a3e635' : '#f97316', // neon lime if snapped, orange if direct
-        weight: 10,
-        opacity: 0.35,
-        lineCap: 'round',
-        lineJoin: 'round',
-      }).addTo(map);
-      routeGlowPolylineRef.current = glowPolyline;
+      gradientSegments.forEach((seg) => {
+        const segLatLngs = seg.coordinates.map((c) => [c.lat, c.lng] as [number, number]);
 
-      // Crisp foreground polyline
-      const polyline = L.polyline(latlngs, {
-        color: routeData.isSnapped ? '#a3e635' : '#f97316',
-        weight: 4.5,
-        opacity: 0.95,
-        lineCap: 'round',
-        lineJoin: 'round',
-      }).addTo(map);
-      routePolylineRef.current = polyline;
+        // Background glow effect in segment color
+        L.polyline(segLatLngs, {
+          color: seg.color,
+          weight: 11,
+          opacity: 0.35,
+          lineCap: 'round',
+          lineJoin: 'round',
+        }).addTo(routeGroup);
+
+        // Foreground crisp polyline with distance-interpolated color
+        L.polyline(segLatLngs, {
+          color: seg.color,
+          weight: 5,
+          opacity: 0.95,
+          lineCap: 'round',
+          lineJoin: 'round',
+        }).addTo(routeGroup);
+      });
     }
   }, [routeData]);
 
@@ -254,7 +255,7 @@ export default function RouteMap({
       const centerIcon = L.divIcon({
         className: 'custom-pin-center-wrapper',
         html: `
-          <div class="custom-pin-center" title="Pusat GPS Art">
+          <div class="custom-pin-center cursor-grab active:cursor-grabbing" title="Pusat GPS Art (Geser untuk memindahkan pola)">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="3"></circle>
               <path d="M12 2v3m0 14v3M2 12h3m14 0h3"></path>
@@ -265,12 +266,23 @@ export default function RouteMap({
         iconAnchor: [14, 14],
       });
 
-      L.marker([centerLocation.lat, centerLocation.lng], { icon: centerIcon })
-        .addTo(markersGroup)
-        .bindPopup('<b class="text-slate-900 font-sans">Titik Pusat Gambar GPS Art</b>');
+      const centerMarker = L.marker([centerLocation.lat, centerLocation.lng], {
+        icon: centerIcon,
+        draggable: !!onCenterDrag,
+      }).addTo(markersGroup);
+
+      if (onCenterDrag) {
+        centerMarker.on('dragend', (e) => {
+          const target = e.target as L.Marker;
+          const pos = target.getLatLng();
+          onCenterDrag({ lat: pos.lat, lng: pos.lng });
+        });
+      }
+
+      centerMarker.bindPopup('<b class="text-slate-900 font-sans">Titik Pusat Gambar GPS Art (Bisa Digeser)</b>');
     }
 
-    // Render waypoints
+    // Render waypoints (Start, Finish, intermediate pins)
     waypoints.forEach((wp, idx) => {
       const isStart = idx === 0;
       const isFinish = idx === waypoints.length - 1 && waypoints.length > 1;
@@ -279,19 +291,22 @@ export default function RouteMap({
       let iconClass = '';
       let size: [number, number] = [22, 22];
       let anchor: [number, number] = [11, 11];
+      let pinTitle = `Waypoint ${idx + 1} (Geser untuk memindahkan rute)`;
 
       if (isStart) {
-        iconClass = 'custom-pin-start';
+        iconClass = 'custom-pin-start cursor-grab active:cursor-grabbing';
         iconHtml = 'S';
-        size = [30, 30];
-        anchor = [15, 15];
+        size = [32, 32];
+        anchor = [16, 16];
+        pinTitle = 'Titik Start (Geser untuk memindahkan titik awal rute)';
       } else if (isFinish && (Math.abs(wp.lat - waypoints[0].lat) > 0.0001 || Math.abs(wp.lng - waypoints[0].lng) > 0.0001)) {
-        iconClass = 'custom-pin-finish';
+        iconClass = 'custom-pin-finish cursor-grab active:cursor-grabbing';
         iconHtml = 'F';
-        size = [30, 30];
-        anchor = [15, 15];
+        size = [32, 32];
+        anchor = [16, 16];
+        pinTitle = 'Titik Finish (Geser untuk memindahkan titik akhir rute)';
       } else {
-        iconClass = 'custom-pin-waypoint';
+        iconClass = 'custom-pin-waypoint cursor-grab active:cursor-grabbing';
         iconHtml = `${idx + 1}`;
         size = [22, 22];
         anchor = [11, 11];
@@ -299,7 +314,7 @@ export default function RouteMap({
 
       const customIcon = L.divIcon({
         className: 'custom-pin-container',
-        html: `<div class="${iconClass}" title="Waypoint ${idx + 1} (Klik / Klik Kanan untuk hapus, geser untuk ubah rute)">${iconHtml}</div>`,
+        html: `<div class="${iconClass}" title="${pinTitle}">${iconHtml}</div>`,
         iconSize: size,
         iconAnchor: anchor,
       });
@@ -328,7 +343,10 @@ export default function RouteMap({
         const popupDiv = document.createElement('div');
         popupDiv.className = 'p-1 text-center font-sans';
         popupDiv.innerHTML = `
-          <div class="text-[11px] font-bold text-slate-800 mb-1">Waypoint #${idx + 1}</div>
+          <div class="text-[11px] font-bold text-slate-800 mb-1">${
+            isStart ? 'Titik Awal (Start)' : isFinish ? 'Titik Akhir (Finish)' : `Waypoint #${idx + 1}`
+          }</div>
+          <div class="text-[9px] text-slate-500 mb-1">Pin dapat digeser ke jalan baru</div>
           <button class="px-2 py-1 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-semibold text-[10px] rounded transition shadow">
             Hapus Titik
           </button>
@@ -342,15 +360,16 @@ export default function RouteMap({
         marker.bindPopup(popupDiv, { closeButton: false, offset: [0, -10] });
       }
     });
-  }, [waypoints, isArtMode, centerLocation, onWaypointDrag, onWaypointDelete]);
+  }, [waypoints, isArtMode, centerLocation, onWaypointDrag, onCenterDrag, onWaypointDelete]);
 
   // Center or Fit Bounds
   const fitToRoute = useCallback(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
-    if (routePolylineRef.current && routeData && routeData.coordinates.length > 1) {
-      map.fitBounds(routePolylineRef.current.getBounds(), {
+    if (routeData && routeData.coordinates.length > 1) {
+      const bounds = L.latLngBounds(routeData.coordinates.map((c) => [c.lat, c.lng]));
+      map.fitBounds(bounds, {
         padding: [60, 60],
         maxZoom: 16,
       });
