@@ -19,6 +19,7 @@ import {
   generateGpsArtRoute,
   buildRouteData,
 } from '@/lib/osrm';
+import { checkObvitnasViolation, pushOutOfObvitnas } from '@/lib/obvitnas';
 
 import Sidebar from '@/components/UI/Sidebar';
 import StatsHud from '@/components/UI/StatsHud';
@@ -176,12 +177,24 @@ export default function HomePage() {
   // Handle Map Clicks based on active mode
   const handleMapClick = useCallback(
     async (clickedLatLng: LatLng) => {
+      // Check Objek Vital Nasional violation
+      const obvCheck = checkObvitnasViolation(clickedLatLng);
+      let effectiveLatLng = clickedLatLng;
+      if (obvCheck.isRestricted && obvCheck.zone) {
+        addToast(
+          'error',
+          'Objek Vital Nasional',
+          `${obvCheck.zone.name} (${obvCheck.zone.sectorName}) adalah area steril terbatas. Titik otomatis dialihkan ke ring luar jalan umum.`
+        );
+        effectiveLatLng = pushOutOfObvitnas(clickedLatLng);
+      }
+
       if (currentMode === 'manual') {
         setManualRedoStack([]); // Reset redo stack on new addition
         const newWaypoint: Waypoint = {
           id: `wp-${Date.now()}-${manualWaypoints.length + 1}`,
-          lat: clickedLatLng.lat,
-          lng: clickedLatLng.lng,
+          lat: effectiveLatLng.lat,
+          lng: effectiveLatLng.lng,
           name: `Point ${manualWaypoints.length + 1}`,
         };
 
@@ -210,14 +223,14 @@ export default function HomePage() {
           setManualRouteData(null);
         }
       } else if (currentMode === 'random') {
-        setLoopStartLocation(clickedLatLng);
+        setLoopStartLocation(effectiveLatLng);
         addToast(
           'info',
           'Titik Start Dipilih',
-          `Lokasi diatur ke [${clickedLatLng.lat.toFixed(4)}, ${clickedLatLng.lng.toFixed(4)}]`
+          `Lokasi diatur ke [${effectiveLatLng.lat.toFixed(4)}, ${effectiveLatLng.lng.toFixed(4)}]`
         );
       } else if (currentMode === 'art') {
-        setArtCenterLocation(clickedLatLng);
+        setArtCenterLocation(effectiveLatLng);
         addToast(
           'info',
           'Pusat GPS Art Dipindahkan',
@@ -231,6 +244,18 @@ export default function HomePage() {
   // Manual & Loop Mode: Drag Waypoint (Start, Finish, intermediate pins in all modes)
   const handleWaypointDrag = useCallback(
     async (index: number, newPos: LatLng) => {
+      // Check Objek Vital Nasional violation
+      const obvCheck = checkObvitnasViolation(newPos);
+      let effectivePos = newPos;
+      if (obvCheck.isRestricted && obvCheck.zone) {
+        addToast(
+          'error',
+          'Objek Vital Nasional',
+          `Titik berada di dalam zona ${obvCheck.zone.name}. Dialihkan ke batas jalan luar.`
+        );
+        effectivePos = pushOutOfObvitnas(newPos);
+      }
+
       if (currentMode === 'manual') {
         const updated = [...manualWaypoints];
         const isClosed =
@@ -240,17 +265,17 @@ export default function HomePage() {
 
         if (index === 0 && isClosed) {
           // If start of a closed loop is dragged, also drag finish to maintain closed loop
-          updated[0] = { ...updated[0], lat: newPos.lat, lng: newPos.lng };
+          updated[0] = { ...updated[0], lat: effectivePos.lat, lng: effectivePos.lng };
           updated[updated.length - 1] = {
             ...updated[updated.length - 1],
-            lat: newPos.lat,
-            lng: newPos.lng,
+            lat: effectivePos.lat,
+            lng: effectivePos.lng,
           };
         } else {
           updated[index] = {
             ...updated[index],
-            lat: newPos.lat,
-            lng: newPos.lng,
+            lat: effectivePos.lat,
+            lng: effectivePos.lng,
           };
         }
 
@@ -270,18 +295,18 @@ export default function HomePage() {
         }
       } else if (currentMode === 'random') {
         // Dragging start pin in Random Loop mode: reposition start and regenerate loop
-        setLoopStartLocation(newPos);
+        setLoopStartLocation(effectivePos);
         addToast('info', 'Titik Start Dipindahkan', 'Menghitung rute loop baru di posisi baru...');
         setIsLoadingRoute(true);
         const result = await generateAccurateLoop(
-          newPos,
+          effectivePos,
           targetDistanceKm,
           loopHeadingOffset,
           allowContraflow,
           avoidSmallAlleys
         );
         setIsLoadingRoute(false);
-        const loopWps = [{ id: 'start-point', lat: newPos.lat, lng: newPos.lng, name: 'Start / Finish' }];
+        const loopWps = [{ id: 'start-point', lat: effectivePos.lat, lng: effectivePos.lng, name: 'Start / Finish' }];
         setLoopWaypoints(loopWps);
         setLoopRouteData(buildRouteData(loopWps, result, 'random', targetDistanceKm));
       }
@@ -302,7 +327,17 @@ export default function HomePage() {
   const handleCenterDrag = useCallback(
     (newPos: LatLng) => {
       if (currentMode === 'art') {
-        setArtCenterLocation(newPos);
+        const obvCheck = checkObvitnasViolation(newPos);
+        let effectivePos = newPos;
+        if (obvCheck.isRestricted && obvCheck.zone) {
+          addToast(
+            'error',
+            'Objek Vital Nasional',
+            `Pusat GPS Art tidak dapat diletakkan di dalam ${obvCheck.zone.name}.`
+          );
+          effectivePos = pushOutOfObvitnas(newPos);
+        }
+        setArtCenterLocation(effectivePos);
         addToast('info', 'Pusat GPS Art Digeser', 'Bentuk gambar diperbarui di lokasi baru.');
       }
     },

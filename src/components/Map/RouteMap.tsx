@@ -5,6 +5,7 @@ import L from 'leaflet';
 import { LatLng, Waypoint, RouteData, TileLayerId } from '@/lib/types';
 import { TILE_LAYERS } from '@/lib/layers';
 import { buildGradientSegments } from '@/lib/geo';
+import { OBVITNAS_ZONES } from '@/lib/obvitnas';
 import {
   Layers,
   Crosshair,
@@ -52,6 +53,7 @@ export default function RouteMap({
   const routeGroupRef = useRef<L.LayerGroup | null>(null);
   const blueprintPolylineRef = useRef<L.Polyline | null>(null);
   const markersGroupRef = useRef<L.LayerGroup | null>(null);
+  const obvitnasLayerRef = useRef<L.LayerGroup | null>(null);
   const hoverMarkerRef = useRef<L.Marker | null>(null);
   const onMapClickRef = useRef(onMapClick);
   useEffect(() => {
@@ -85,8 +87,13 @@ export default function RouteMap({
       attribution: tileConfig.attribution,
       maxZoom: tileConfig.maxZoom,
       subdomains: tileConfig.subdomains || ['a', 'b', 'c'],
+      className: selectedTile === 'dark' ? 'dark-tiles' : '',
     }).addTo(map);
     tileLayerRef.current = tileLayer;
+
+    // Objek Vital Nasional (Sterile Zone) Indicators Layer
+    const obvitnasGroup = L.layerGroup().addTo(map);
+    obvitnasLayerRef.current = obvitnasGroup;
 
     // Route layer group (Distance Gradient segments)
     const routeGroup = L.layerGroup().addTo(map);
@@ -129,6 +136,7 @@ export default function RouteMap({
       attribution: tileConfig.attribution,
       maxZoom: tileConfig.maxZoom,
       subdomains: tileConfig.subdomains || ['a', 'b', 'c'],
+      className: selectedTile === 'dark' ? 'dark-tiles' : '',
     }).addTo(map);
 
     tileLayerRef.current = newTileLayer;
@@ -149,9 +157,9 @@ export default function RouteMap({
       const latlngs = blueprintCoords.map((c) => [c.lat, c.lng] as [number, number]);
       const blueprint = L.polyline(latlngs, {
         color: '#06b6d4', // neon cyan
-        weight: 3.5,
-        opacity: 0.85,
-        dashArray: '8, 8',
+        weight: 2,
+        opacity: 0.8,
+        dashArray: '6, 6',
         lineCap: 'round',
         lineJoin: 'round',
       }).addTo(map);
@@ -160,7 +168,7 @@ export default function RouteMap({
     }
   }, [blueprintCoords, showBlueprint, isArtMode]);
 
-  // Update routed polyline with Distance Gradient (Gradasi Warna Sesuai Jarak)
+  // Update routed polyline with Distance Gradient (Perkecil ukuran agar tidak menumpuk)
   useEffect(() => {
     const map = mapInstanceRef.current;
     const routeGroup = routeGroupRef.current;
@@ -174,26 +182,69 @@ export default function RouteMap({
       gradientSegments.forEach((seg) => {
         const segLatLngs = seg.coordinates.map((c) => [c.lat, c.lng] as [number, number]);
 
-        // Background glow effect in segment color
+        // Background subtle neon glow effect (slimmed down to avoid overlap blobbing)
         L.polyline(segLatLngs, {
           color: seg.color,
-          weight: 11,
-          opacity: 0.35,
+          weight: 5.5,
+          opacity: 0.22,
           lineCap: 'round',
           lineJoin: 'round',
         }).addTo(routeGroup);
 
-        // Foreground crisp polyline with distance-interpolated color
+        // Foreground crisp, sharp polyline (slim 2.8px weight prevents messy overlap on narrow roads)
         L.polyline(segLatLngs, {
           color: seg.color,
-          weight: 5,
-          opacity: 0.95,
+          weight: 2.8,
+          opacity: 1,
           lineCap: 'round',
           lineJoin: 'round',
         }).addTo(routeGroup);
       });
     }
   }, [routeData]);
+
+  // Render Objek Vital Nasional (Sterile Zone) Indicators
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    const obvitnasGroup = obvitnasLayerRef.current;
+    if (!map || !obvitnasGroup) return;
+
+    const renderZones = () => {
+      obvitnasGroup.clearLayers();
+      const currentZoom = map.getZoom();
+      // Render indicator circles when zoomed in enough to see streets
+      if (currentZoom >= 12) {
+        const bounds = map.getBounds();
+        OBVITNAS_ZONES.forEach((zone) => {
+          if (bounds.contains([zone.lat, zone.lng])) {
+            const circle = L.circle([zone.lat, zone.lng], {
+              radius: zone.radiusKm * 1000,
+              color: '#f43f5e',
+              fillColor: '#f43f5e',
+              fillOpacity: 0.12,
+              weight: 1.5,
+              dashArray: '4, 4',
+              interactive: true,
+            }).addTo(obvitnasGroup);
+
+            circle.bindTooltip(
+              `<div class="text-xs font-semibold text-rose-300">
+                <span class="block text-[10px] text-rose-400 font-bold uppercase tracking-wider">Zona Steril (Obvitnas)</span>
+                ${zone.name}
+              </div>`,
+              { sticky: true, className: 'leaflet-popup-content-wrapper' }
+            );
+          }
+        });
+      }
+    };
+
+    renderZones();
+    map.on('moveend', renderZones);
+    return () => {
+      map.off('moveend', renderZones);
+    };
+  }, []);
 
   // Handle Fly To searched location
   useEffect(() => {

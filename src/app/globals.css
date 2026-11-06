@@ -209,3 +209,9 @@ body {
 .leaflet-marker-draggable:active {
   cursor: grabbing !important;
 }
+
+/* Free OpenStreetMap Dark Mode Tile Inversion (No API Key, No Watermark) */
+.dark-tiles {
+  filter: brightness(0.65) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7) !important;
+}
+

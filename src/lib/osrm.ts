@@ -1,5 +1,6 @@
 import { LatLng, RouteData, Waypoint } from './types';
 import { haversineDistance, calculatePolylineDistance, generateRealisticElevation } from './geo';
+import { pushOutOfObvitnas, routeHasObvitnasViolation } from './obvitnas';
 
 const OSRM_FOOT_URL = 'https://router.project-osrm.org/route/v1/foot';
 const OSRM_BIKE_URL = 'https://router.project-osrm.org/route/v1/bike';
@@ -256,9 +257,15 @@ export async function generateAccurateLoop(
       lng: cLng + (r * Math.sin(a2)) / (kmPerLng || 1),
     };
 
+    // Keep anchors outside Objek Vital Nasional exclusion zones
+    wp1 = pushOutOfObvitnas(wp1);
+    wp2 = pushOutOfObvitnas(wp2);
+
     if (avoidSmallAlleys) {
       // Snap anchors to open public thoroughfares to avoid private compounds or vital national objects
       [wp1, wp2] = await Promise.all([snapToPublicStreet(wp1), snapToPublicStreet(wp2)]);
+      wp1 = pushOutOfObvitnas(wp1);
+      wp2 = pushOutOfObvitnas(wp2);
     }
 
     return [start, wp1, wp2, start];
@@ -290,16 +297,27 @@ export async function generateAccurateLoop(
     return coords;
   };
 
-  // Pass 1
-  let anchors = await buildCircuitAnchors(radiusKm, headingDeg);
+  // Pass 1: generate with heading and avoid Objek Vital Nasional
+  let activeHeading = headingDeg;
+  let anchors = await buildCircuitAnchors(radiusKm, activeHeading);
   let coords = await routeAnchors(anchors);
+
+  // If initial loop intersects any Objek Vital Nasional, rotate heading to find clear public sector
+  for (let rotAttempt = 0; rotAttempt < 4; rotAttempt++) {
+    const obvCheck = routeHasObvitnasViolation(coords);
+    if (!obvCheck.hasViolation) break;
+    activeHeading = (activeHeading + 60) % 360;
+    anchors = await buildCircuitAnchors(radiusKm, activeHeading);
+    coords = await routeAnchors(anchors);
+  }
+
   let distKm = calculatePolylineDistance(coords);
 
   // Pass 2: Calibrate if deviation > 8%
   if (Math.abs(distKm - targetKm) / targetKm > 0.08) {
     const calibrationFactor = Math.min(1.5, Math.max(0.65, targetKm / (distKm || 1)));
     radiusKm *= calibrationFactor;
-    anchors = await buildCircuitAnchors(radiusKm, headingDeg);
+    anchors = await buildCircuitAnchors(radiusKm, activeHeading);
     const calibratedCoords = await routeAnchors(anchors);
     const calibratedDist = calculatePolylineDistance(calibratedCoords);
 
