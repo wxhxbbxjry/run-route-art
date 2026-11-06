@@ -45,6 +45,11 @@ body {
   outline: none;
 }
 
+/* 100% Free Lifetime Cyber Dark Map using standard OpenStreetMap (Zero API Key / No Watermark) */
+.dark-map-mode .leaflet-tile {
+  filter: brightness(0.68) invert(1) contrast(1.55) hue-rotate(190deg) saturate(0.32) brightness(0.88);
+}
+
 /* Remove default Leaflet focus outline */
 .leaflet-container:focus {
   outline: none;

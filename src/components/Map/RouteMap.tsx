@@ -313,7 +313,12 @@ export default function RouteMap({
   return (
     <div className="relative w-full h-full overflow-hidden">
       {/* Leaflet container */}
-      <div ref={mapContainerRef} className="w-full h-full z-0 cursor-crosshair" />
+      <div
+        ref={mapContainerRef}
+        className={`w-full h-full z-0 cursor-crosshair ${
+          selectedTile === 'dark' ? 'dark-map-mode' : ''
+        }`}
+      />
 
       {/* Map Control Buttons (Floating Right) */}
       <div className="absolute right-4 top-20 flex flex-col gap-2 z-20">
