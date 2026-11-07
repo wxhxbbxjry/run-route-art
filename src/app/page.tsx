@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import {
   LatLng,
@@ -8,15 +8,12 @@ import {
   RouteData,
   RouteMode,
   TileLayerId,
-  GpsShapeKey,
   UnitSystem,
 } from '@/lib/types';
-import { GPS_SHAPES } from '@/lib/shapes';
-import { transformShapePoints, getCoordinateAtDistance } from '@/lib/geo';
+import { getCoordinateAtDistance } from '@/lib/geo';
 import {
   fetchSmartManualRoute,
   generateAccurateLoop,
-  generateGpsArtRoute,
   buildRouteData,
 } from '@/lib/osrm';
 import { checkObvitnasViolation, pushOutOfObvitnas } from '@/lib/obvitnas';
@@ -69,20 +66,6 @@ export default function HomePage() {
   const [loopWaypoints, setLoopWaypoints] = useState<Waypoint[]>([]);
   const [loopRouteData, setLoopRouteData] = useState<RouteData | null>(null);
 
-  // 3. ISOLATED STATE: GPS Art Mode
-  const [selectedShape, setSelectedShape] = useState<GpsShapeKey>('heart');
-  const [artCenterLocation, setArtCenterLocation] = useState<LatLng | null>({
-    lat: -6.2088,
-    lng: 106.8456,
-  });
-  const [artScaleKm, setArtScaleKm] = useState<number>(3.0);
-  const [artRotationDeg, setArtRotationDeg] = useState<number>(0);
-  const [artSnapToRoads, setArtSnapToRoads] = useState<boolean>(false); // False = Pure recognizable shape
-  const [showBlueprint, setShowBlueprint] = useState<boolean>(true);
-  const [blueprintCoords, setBlueprintCoords] = useState<LatLng[] | null>(null);
-  const [artWaypoints, setArtWaypoints] = useState<Waypoint[]>([]);
-  const [artRouteData, setArtRouteData] = useState<RouteData | null>(null);
-
   // Stats & Pace HUD
   const [paceSeconds, setPaceSeconds] = useState<number>(360); // 6:00 / km
   const [showElevation, setShowElevation] = useState<boolean>(false);
@@ -107,53 +90,15 @@ export default function HomePage() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Mode-isolated active states
-  const activeWaypoints =
-    currentMode === 'manual'
-      ? manualWaypoints
-      : currentMode === 'random'
-      ? loopWaypoints
-      : artWaypoints;
-
-  const activeRouteData =
-    currentMode === 'manual'
-      ? manualRouteData
-      : currentMode === 'random'
-      ? loopRouteData
-      : artRouteData;
-
-  // STRICT ISOLATION: GPS Art Blueprint ONLY renders in 'art' mode!
-  const activeBlueprintCoords = currentMode === 'art' ? blueprintCoords : null;
-  const isArtModeActive = currentMode === 'art';
-  const activeCenterLocation =
-    currentMode === 'art'
-      ? artCenterLocation
-      : currentMode === 'random'
-      ? loopStartLocation
-      : null;
-
-  // Update GPS Art Blueprint coordinates when shape, center, scale, or rotation changes
-  useEffect(() => {
-    if (!artCenterLocation) return;
-    const shapeDef = GPS_SHAPES[selectedShape];
-    if (!shapeDef) return;
-
-    const transformed = transformShapePoints(
-      shapeDef.points,
-      artCenterLocation,
-      artScaleKm,
-      artRotationDeg
-    );
-    setBlueprintCoords(transformed);
-  }, [selectedShape, artCenterLocation, artScaleKm, artRotationDeg]);
+  // Mode-isolated active states (Manual Tap & Random Loop)
+  const activeWaypoints = currentMode === 'manual' ? manualWaypoints : loopWaypoints;
+  const activeRouteData = currentMode === 'manual' ? manualRouteData : loopRouteData;
 
   // Handle Search Result from OSM Nominatim (OnTheGoMap search style)
   const handleSelectSearchResult = useCallback(
     (latlng: LatLng, name: string) => {
       setFlyToLocation(latlng);
-      if (currentMode === 'art') {
-        setArtCenterLocation(latlng);
-      } else if (currentMode === 'random') {
+      if (currentMode === 'random') {
         setLoopStartLocation(latlng);
       }
       addToast('info', 'Lokasi Ditemukan', name.split(',')[0]);
@@ -214,9 +159,7 @@ export default function HomePage() {
           const built = buildRouteData(
             updatedWaypoints,
             result,
-            'manual',
-            undefined,
-            undefined
+            'manual'
           );
           setManualRouteData(built);
         } else {
@@ -228,13 +171,6 @@ export default function HomePage() {
           'info',
           'Titik Start Dipilih',
           `Lokasi diatur ke [${effectiveLatLng.lat.toFixed(4)}, ${effectiveLatLng.lng.toFixed(4)}]`
-        );
-      } else if (currentMode === 'art') {
-        setArtCenterLocation(effectiveLatLng);
-        addToast(
-          'info',
-          'Pusat GPS Art Dipindahkan',
-          `Titik tengah gambar diatur ke lokasi yang diklik.`
         );
       }
     },
@@ -321,27 +257,6 @@ export default function HomePage() {
       loopHeadingOffset,
       addToast,
     ]
-  );
-
-  // Center Drag for GPS Art
-  const handleCenterDrag = useCallback(
-    (newPos: LatLng) => {
-      if (currentMode === 'art') {
-        const obvCheck = checkObvitnasViolation(newPos);
-        let effectivePos = newPos;
-        if (obvCheck.isRestricted && obvCheck.zone) {
-          addToast(
-            'error',
-            'Objek Vital Nasional',
-            `Pusat GPS Art tidak dapat diletakkan di dalam ${obvCheck.zone.name}.`
-          );
-          effectivePos = pushOutOfObvitnas(newPos);
-        }
-        setArtCenterLocation(effectivePos);
-        addToast('info', 'Pusat GPS Art Digeser', 'Bentuk gambar diperbarui di lokasi baru.');
-      }
-    },
-    [currentMode, addToast]
   );
 
   // Manual Mode: Delete Single Waypoint (OnTheGoMap click/right-click delete)
@@ -624,75 +539,6 @@ export default function HomePage() {
     handleGenerateLoop(nextHeading);
   }, [loopHeadingOffset, handleGenerateLoop]);
 
-  // GPS Art: Generate
-  const handleGenerateArt = useCallback(async () => {
-    if (!artCenterLocation) {
-      addToast('warning', 'Pusat Belum Dipilih', 'Klik peta untuk menentukan titik gambar.');
-      return;
-    }
-
-    const shapeDef = GPS_SHAPES[selectedShape];
-    if (!shapeDef) return;
-
-    setIsLoadingRoute(true);
-    const transformed = transformShapePoints(
-      shapeDef.points,
-      artCenterLocation,
-      artScaleKm,
-      artRotationDeg
-    );
-    setBlueprintCoords(transformed);
-
-    const artWps: Waypoint[] = transformed.map((pt, idx) => ({
-      id: `art-pt-${idx}`,
-      lat: pt.lat,
-      lng: pt.lng,
-      name: `${shapeDef.name} #${idx + 1}`,
-    }));
-    setArtWaypoints(artWps);
-
-    // Route calculation via smart GPS Art engine
-    const result = await generateGpsArtRoute(
-      transformed,
-      artSnapToRoads,
-      allowContraflow,
-      avoidSmallAlleys
-    );
-    setIsLoadingRoute(false);
-
-    const built = buildRouteData(artWps, result, 'art', artScaleKm, shapeDef.name);
-    setArtRouteData(built);
-
-    // Celebration confetti
-    if (typeof window !== 'undefined') {
-      try {
-        const confetti = (await import('canvas-confetti')).default;
-        confetti({
-          particleCount: 70,
-          spread: 60,
-          origin: { y: 0.7 },
-        });
-      } catch {
-        // ignore
-      }
-    }
-
-    addToast(
-      'success',
-      `GPS Art ${shapeDef.name} Terbentuk!`,
-      `Total lari: ${result.distanceKm.toFixed(2)} km. Bentuk presisi siap diekspor ke Strava!`
-    );
-  }, [
-    artCenterLocation,
-    selectedShape,
-    artScaleKm,
-    artRotationDeg,
-    artSnapToRoads,
-    allowContraflow,
-    avoidSmallAlleys,
-    addToast,
-  ]);
-
   // Load Imported GPX or Saved Route
   const handleLoadRoute = useCallback(
     (loadedRoute: RouteData, name?: string) => {
@@ -723,8 +569,6 @@ export default function HomePage() {
         const userLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         if (currentMode === 'random') {
           setLoopStartLocation(userLoc);
-        } else if (currentMode === 'art') {
-          setArtCenterLocation(userLoc);
         }
         addToast(
           'success',
@@ -751,16 +595,11 @@ export default function HomePage() {
         <RouteMap
           waypoints={activeWaypoints}
           routeData={activeRouteData}
-          blueprintCoords={activeBlueprintCoords}
-          showBlueprint={showBlueprint && isArtModeActive}
           selectedTile={selectedTile}
           onTileChange={setSelectedTile}
           onMapClick={handleMapClick}
           onWaypointDrag={handleWaypointDrag}
-          onCenterDrag={handleCenterDrag}
           onWaypointDelete={handleWaypointDelete}
-          centerLocation={activeCenterLocation}
-          isArtMode={isArtModeActive}
           hoverLocation={hoverLocation}
           flyToLocation={flyToLocation}
         />
@@ -775,14 +614,8 @@ export default function HomePage() {
         // Manual mode props
         waypoints={manualWaypoints}
         routeData={manualRouteData}
-        snapToRoads={currentMode === 'art' ? artSnapToRoads : manualSnapToRoads}
-        onToggleSnap={(snap) => {
-          if (currentMode === 'art') {
-            setArtSnapToRoads(snap);
-          } else {
-            handleToggleManualSnap(snap);
-          }
-        }}
+        snapToRoads={manualSnapToRoads}
+        onToggleSnap={handleToggleManualSnap}
         onUndoWaypoint={handleUndoManualWaypoint}
         onRedoWaypoint={handleRedoManualWaypoint}
         canRedo={manualRedoStack.length > 0}
@@ -803,17 +636,6 @@ export default function HomePage() {
         onUseMyLocation={handleUseMyLocation}
         onGenerateLoop={() => handleGenerateLoop()}
         onReRollLoop={handleReRollLoop}
-        // GPS Art props
-        selectedShape={selectedShape}
-        onSelectShape={setSelectedShape}
-        artCenterLocation={artCenterLocation}
-        artScaleKm={artScaleKm}
-        onArtScaleChange={setArtScaleKm}
-        artRotationDeg={artRotationDeg}
-        onArtRotationChange={setArtRotationDeg}
-        showBlueprint={showBlueprint}
-        onToggleBlueprint={setShowBlueprint}
-        onGenerateArt={handleGenerateArt}
         isLoading={isLoadingRoute}
       />
 

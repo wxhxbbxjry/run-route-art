@@ -1,14 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
-import { RouteMode, LatLng, Waypoint, RouteData, GpsShapeKey } from '@/lib/types';
+import { RouteMode, LatLng, Waypoint, RouteData } from '@/lib/types';
 import ManualMode from './ManualMode';
 import RandomLoopMode from './RandomLoopMode';
-import GpsArtMode from './GpsArtMode';
 import {
   MousePointerClick,
   Shuffle,
-  Sparkles,
   ChevronUp,
   ChevronDown,
   Route,
@@ -44,17 +42,6 @@ interface SidebarProps {
   onUseMyLocation: () => void;
   onGenerateLoop: () => void;
   onReRollLoop: () => void;
-  // GPS Art props
-  selectedShape: GpsShapeKey;
-  onSelectShape: (shape: GpsShapeKey) => void;
-  artCenterLocation: LatLng | null;
-  artScaleKm: number;
-  onArtScaleChange: (scale: number) => void;
-  artRotationDeg: number;
-  onArtRotationChange: (deg: number) => void;
-  showBlueprint: boolean;
-  onToggleBlueprint: (show: boolean) => void;
-  onGenerateArt: () => void;
   // Common
   isLoading: boolean;
 }
@@ -85,16 +72,6 @@ export default function Sidebar({
   onUseMyLocation,
   onGenerateLoop,
   onReRollLoop,
-  selectedShape,
-  onSelectShape,
-  artCenterLocation,
-  artScaleKm,
-  onArtScaleChange,
-  artRotationDeg,
-  onArtRotationChange,
-  showBlueprint,
-  onToggleBlueprint,
-  onGenerateArt,
   isLoading,
 }: SidebarProps) {
   const [isMobileExpanded, setIsMobileExpanded] = useState(false); // Default collapsed on mobile for maximum map view!
@@ -116,10 +93,10 @@ export default function Sidebar({
             </div>
             <div>
               <h1 className="text-base font-black tracking-tight text-white flex items-center gap-1.5">
-                RunRoute <span className="text-lime-400 font-mono">ART</span>
+                RunRoute <span className="text-lime-400 font-mono">PRO</span>
               </h1>
               <p className="text-[11px] text-slate-400 font-medium">
-                GPS Art & Smart Route Planner
+                Smart Running Route & Loop Planner
               </p>
             </div>
           </div>
@@ -141,13 +118,13 @@ export default function Sidebar({
           </div>
         </div>
 
-        {/* Mode Navigation Tabs */}
+        {/* Mode Navigation Tabs (Manual Tap & Random Loop) */}
         <div className="p-3 border-b border-slate-800/60 bg-slate-950/40">
-          <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-slate-900/90 border border-slate-800">
+          <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-slate-900/90 border border-slate-800">
             {/* Manual Tab */}
             <button
               onClick={() => onModeChange('manual')}
-              className={`py-2 px-1 rounded-xl text-xs font-bold flex flex-col items-center gap-1 transition ${
+              className={`py-2 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
                 currentMode === 'manual'
                   ? 'bg-lime-500 text-slate-950 shadow-[0_0_12px_rgba(163,230,53,0.4)]'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
@@ -160,7 +137,7 @@ export default function Sidebar({
             {/* Random Loop Tab */}
             <button
               onClick={() => onModeChange('random')}
-              className={`py-2 px-1 rounded-xl text-xs font-bold flex flex-col items-center gap-1 transition ${
+              className={`py-2 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
                 currentMode === 'random'
                   ? 'bg-lime-500 text-slate-950 shadow-[0_0_12px_rgba(163,230,53,0.4)]'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
@@ -168,19 +145,6 @@ export default function Sidebar({
             >
               <Shuffle className="w-4 h-4" />
               <span>Random Loop</span>
-            </button>
-
-            {/* GPS Art Tab */}
-            <button
-              onClick={() => onModeChange('art')}
-              className={`py-2 px-1 rounded-xl text-xs font-bold flex flex-col items-center gap-1 transition ${
-                currentMode === 'art'
-                  ? 'bg-cyan-400 text-slate-950 shadow-[0_0_12px_rgba(6,182,212,0.4)]'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-              }`}
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>GPS Art</span>
             </button>
           </div>
         </div>
@@ -221,26 +185,6 @@ export default function Sidebar({
               isLoading={isLoading}
             />
           )}
-
-          {currentMode === 'art' && (
-            <GpsArtMode
-              selectedShape={selectedShape}
-              onSelectShape={onSelectShape}
-              centerLocation={artCenterLocation}
-              onUseMyLocation={onUseMyLocation}
-              scaleKm={artScaleKm}
-              onScaleChange={onArtScaleChange}
-              rotationDeg={artRotationDeg}
-              onRotationChange={onArtRotationChange}
-              showBlueprint={showBlueprint}
-              onToggleBlueprint={onToggleBlueprint}
-              snapToRoads={snapToRoads}
-              onToggleSnap={onToggleSnap}
-              onGenerateArt={onGenerateArt}
-              routeData={routeData}
-              isLoading={isLoading}
-            />
-          )}
         </div>
 
         {/* Footer info */}
@@ -264,7 +208,7 @@ export default function Sidebar({
               className="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0"
             >
               <div className="w-8 h-8 rounded-xl bg-lime-400 flex items-center justify-center text-slate-950 font-black text-xs shrink-0 shadow-[0_0_10px_rgba(163,230,53,0.5)]">
-                {currentMode === 'art' ? 'A' : currentMode === 'random' ? 'L' : 'M'}
+                {currentMode === 'random' ? 'L' : 'M'}
               </div>
               <div className="min-w-0">
                 <div className="flex items-baseline gap-1">
@@ -274,11 +218,7 @@ export default function Sidebar({
                   <span className="text-[10px] font-bold text-slate-400">{unitLabel}</span>
                 </div>
                 <p className="text-[10px] text-slate-400 font-medium capitalize truncate">
-                  {currentMode === 'art'
-                    ? 'GPS Art Mode'
-                    : currentMode === 'random'
-                    ? 'Random Loop'
-                    : 'Manual Tap'}
+                  {currentMode === 'random' ? 'Random Loop' : 'Manual Tap'}
                 </p>
               </div>
             </div>
@@ -326,40 +266,29 @@ export default function Sidebar({
             </div>
           </div>
 
-          {/* Mode Switcher Tabs */}
-          <div className="grid grid-cols-3 gap-1 p-2 bg-slate-950/90 border-b border-slate-800">
+          {/* Mode Switcher Tabs (2 Modes) */}
+          <div className="grid grid-cols-2 gap-2 p-2 bg-slate-950/90 border-b border-slate-800">
             <button
               onClick={() => onModeChange('manual')}
-              className={`py-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 transition ${
+              className={`py-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
                 currentMode === 'manual'
                   ? 'bg-lime-500 text-slate-950 shadow-[0_0_10px_rgba(163,230,53,0.4)]'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
               <MousePointerClick className="w-3.5 h-3.5" />
-              <span>Manual</span>
+              <span>Manual Tap</span>
             </button>
             <button
               onClick={() => onModeChange('random')}
-              className={`py-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 transition ${
+              className={`py-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
                 currentMode === 'random'
                   ? 'bg-lime-500 text-slate-950 shadow-[0_0_10px_rgba(163,230,53,0.4)]'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
               <Shuffle className="w-3.5 h-3.5" />
-              <span>Random</span>
-            </button>
-            <button
-              onClick={() => onModeChange('art')}
-              className={`py-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 transition ${
-                currentMode === 'art'
-                  ? 'bg-cyan-400 text-slate-950 shadow-[0_0_10px_rgba(6,182,212,0.4)]'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>GPS Art</span>
+              <span>Random Loop</span>
             </button>
           </div>
 
@@ -395,26 +324,6 @@ export default function Sidebar({
                 onUseMyLocation={onUseMyLocation}
                 onGenerateLoop={onGenerateLoop}
                 onReRoll={onReRollLoop}
-                routeData={routeData}
-                isLoading={isLoading}
-              />
-            )}
-
-            {currentMode === 'art' && (
-              <GpsArtMode
-                selectedShape={selectedShape}
-                onSelectShape={onSelectShape}
-                centerLocation={artCenterLocation}
-                onUseMyLocation={onUseMyLocation}
-                scaleKm={artScaleKm}
-                onScaleChange={onArtScaleChange}
-                rotationDeg={artRotationDeg}
-                onRotationChange={onArtRotationChange}
-                showBlueprint={showBlueprint}
-                onToggleBlueprint={onToggleBlueprint}
-                snapToRoads={snapToRoads}
-                onToggleSnap={onToggleSnap}
-                onGenerateArt={onGenerateArt}
                 routeData={routeData}
                 isLoading={isLoading}
               />

@@ -132,31 +132,30 @@ export default function RandomLoopMode({
         </div>
       </div>
 
-      {/* Generator & Re-roll Buttons */}
+      {/* Generator & Re-generate Loop Buttons Side-by-Side */}
       <div className="grid grid-cols-2 gap-2 pt-1">
         <button
           onClick={onGenerateLoop}
           disabled={!startLocation || isLoading}
-          className="col-span-2 py-3 px-4 rounded-xl bg-gradient-to-r from-lime-500 to-emerald-600 hover:from-lime-400 hover:to-emerald-500 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(163,230,53,0.4)] transition active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none"
+          className="py-3 px-3 rounded-xl bg-gradient-to-r from-lime-500 to-emerald-600 hover:from-lime-400 hover:to-emerald-500 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-[0_0_18px_rgba(163,230,53,0.35)] transition active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none"
         >
           {isLoading ? (
             <Zap className="w-4 h-4 animate-spin" />
           ) : (
             <Shuffle className="w-4 h-4" />
           )}
-          <span>{isLoading ? 'Menghitung Rute OSRM...' : 'Generate Random Loop'}</span>
+          <span>{isLoading ? 'Menghitung...' : 'Generate Loop'}</span>
         </button>
 
-        {routeData && (
-          <button
-            onClick={onReRoll}
-            disabled={!startLocation || isLoading}
-            className="col-span-2 py-2.5 px-3 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/60 font-medium text-xs flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-40"
-          >
-            <RotateCcw className="w-4 h-4 text-lime-400" />
-            <span>Re-roll / Acak Arah Lain</span>
-          </button>
-        )}
+        <button
+          onClick={onReRoll}
+          disabled={!startLocation || isLoading}
+          title="Acak rute loop dengan arah atau variasi jalan baru"
+          className="py-3 px-3 rounded-xl bg-slate-800/90 hover:bg-slate-700/90 text-slate-100 hover:text-white border border-lime-500/40 hover:border-lime-400 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md transition active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none"
+        >
+          <RotateCcw className={`w-4 h-4 text-lime-400 ${isLoading ? 'animate-spin' : ''}`} />
+          <span>Re-generate Loop</span>
+        </button>
       </div>
 
       {/* Distance accuracy feedback */}

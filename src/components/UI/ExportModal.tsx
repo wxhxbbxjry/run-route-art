@@ -26,7 +26,6 @@ export default function ExportModal({
   paceSeconds,
 }: ExportModalProps) {
   const [routeName, setRouteName] = useState(() => {
-    if (routeData.shapeName) return `GPS Art ${routeData.shapeName} ${routeData.distanceKm.toFixed(1)}K`;
     if (routeData.mode === 'random') return `Random Loop ${routeData.distanceKm.toFixed(1)}K`;
     return `Manual Run Route ${routeData.distanceKm.toFixed(1)}K`;
   });

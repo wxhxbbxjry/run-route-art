@@ -336,60 +336,13 @@ export async function generateAccurateLoop(
 }
 
 /**
- * Smart GPS Art Route Builder:
- * When snapToRoads is false: Produces the exact, pure shape geometry (100% Strava Art accuracy).
- * When snapToRoads is true: Sub-samples key contour vertices and routes bidirectionally (lawan arah allowed).
- */
-export async function generateGpsArtRoute(
-  shapeCoordinates: LatLng[],
-  snapToRoads: boolean = false,
-  allowContraflow: boolean = true,
-  avoidSmallAlleys: boolean = true
-): Promise<RouteFetchResult> {
-  if (shapeCoordinates.length < 2) {
-    return {
-      coordinates: shapeCoordinates,
-      distanceKm: 0,
-      isSnapped: false,
-      source: 'direct',
-    };
-  }
-
-  // Pure recognized geometric art shape mode
-  if (!snapToRoads) {
-    const directDist = calculatePolylineDistance(shapeCoordinates);
-    return {
-      coordinates: shapeCoordinates,
-      distanceKm: directDist,
-      isSnapped: false,
-      source: 'direct',
-    };
-  }
-
-  // Snapped to roads: sub-sample shape points and route bidirectionally
-  const maxSamplePoints = Math.min(14, shapeCoordinates.length);
-  const step = Math.max(1, Math.floor(shapeCoordinates.length / maxSamplePoints));
-  const samplePoints: LatLng[] = [];
-
-  for (let i = 0; i < shapeCoordinates.length; i += step) {
-    samplePoints.push(shapeCoordinates[i]);
-  }
-  if (samplePoints[samplePoints.length - 1] !== shapeCoordinates[shapeCoordinates.length - 1]) {
-    samplePoints.push(shapeCoordinates[shapeCoordinates.length - 1]);
-  }
-
-  return await fetchSmartManualRoute(samplePoints, true, allowContraflow, avoidSmallAlleys);
-}
-
-/**
  * Builds complete RouteData including realistic elevation profiles.
  */
 export function buildRouteData(
   waypoints: Waypoint[],
   routeResult: RouteFetchResult,
   mode: RouteData['mode'],
-  targetDistanceKm?: number,
-  shapeName?: string
+  targetDistanceKm?: number
 ): RouteData {
   const { elevationGainM, elevationLossM, elevationProfile } = generateRealisticElevation(
     routeResult.coordinates,
@@ -407,6 +360,5 @@ export function buildRouteData(
     source: routeResult.source,
     mode,
     targetDistanceKm,
-    shapeName,
   };
 }

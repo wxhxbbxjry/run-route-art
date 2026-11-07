@@ -2,22 +2,22 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'RunRoute Art | GPS Art Planner & Running Route Generator',
+  title: 'RunRoute PRO | Smart Running Route & Random Loop Planner',
   description:
-    'Rancang rute lari kreatif, random 5K/10K loop, dan GPS art (hati, bintang, anjing, kucing) 100% gratis dengan OpenStreetMap & OSRM routing. Ekspor ke GPX (Strava/Garmin) dan GeoJSON.',
+    'Rancang rute lari pintar, random 5K/10K closed loop, dan manual tap-to-route 100% gratis dengan OpenStreetMap & OSRM routing. Ekspor rute ke GPX (Strava/Garmin) dan GeoJSON.',
   keywords: [
-    'GPS Art',
     'Run Route Generator',
-    'Strava Art',
-    'Garmin Route',
-    'GPX Export',
-    '5K Loop',
+    'Random Loop Runner',
+    'Closed Loop 5K',
     '10K Loop',
     'Marathon Route Planner',
+    'Strava Route GPX',
+    'Garmin Route',
+    'GPX Export',
     'Leaflet',
     'OSRM',
   ],
-  authors: [{ name: 'RunRoute Art' }],
+  authors: [{ name: 'RunRoute PRO' }],
 };
 
 export const viewport: Viewport = {

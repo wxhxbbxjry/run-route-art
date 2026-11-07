@@ -17,16 +17,11 @@ import {
 interface RouteMapProps {
   waypoints: Waypoint[];
   routeData: RouteData | null;
-  blueprintCoords: LatLng[] | null;
-  showBlueprint: boolean;
   selectedTile: TileLayerId;
   onTileChange: (tile: TileLayerId) => void;
   onMapClick: (latlng: LatLng) => void;
   onWaypointDrag?: (index: number, latlng: LatLng) => void;
-  onCenterDrag?: (latlng: LatLng) => void;
   onWaypointDelete?: (index: number) => void;
-  centerLocation?: LatLng | null;
-  isArtMode?: boolean;
   hoverLocation?: LatLng | null;
   flyToLocation?: LatLng | null;
 }
@@ -34,16 +29,11 @@ interface RouteMapProps {
 export default function RouteMap({
   waypoints,
   routeData,
-  blueprintCoords,
-  showBlueprint,
   selectedTile,
   onTileChange,
   onMapClick,
   onWaypointDrag,
-  onCenterDrag,
   onWaypointDelete,
-  centerLocation,
-  isArtMode = false,
   hoverLocation,
   flyToLocation,
 }: RouteMapProps) {
@@ -52,7 +42,6 @@ export default function RouteMap({
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const labelLayerRef = useRef<L.TileLayer | null>(null);
   const routeGroupRef = useRef<L.LayerGroup | null>(null);
-  const blueprintPolylineRef = useRef<L.Polyline | null>(null);
   const markersGroupRef = useRef<L.LayerGroup | null>(null);
   const obvitnasLayerRef = useRef<L.LayerGroup | null>(null);
   const hoverMarkerRef = useRef<L.Marker | null>(null);
@@ -68,10 +57,9 @@ export default function RouteMap({
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
-    // Default center: Jakarta (-6.2088, 106.8456) or user initial location
-    const initialCenter: [number, number] = centerLocation
-      ? [centerLocation.lat, centerLocation.lng]
-      : [-6.2088, 106.8456];
+    // Default center: First waypoint or Jakarta (-6.2088, 106.8456)
+    const initialCenter: [number, number] =
+      waypoints.length > 0 ? [waypoints[0].lat, waypoints[0].lng] : [-6.2088, 106.8456];
 
     const map = L.map(mapContainerRef.current, {
       center: initialCenter,
@@ -82,23 +70,25 @@ export default function RouteMap({
 
     mapInstanceRef.current = map;
 
-    // Initialize Tile Layer
+    // Initialize Tile Layer with maxNativeZoom (prevents "Map data not yet available")
     const tileConfig = TILE_LAYERS[selectedTile] || TILE_LAYERS.dark;
     const tileLayer = L.tileLayer(tileConfig.url, {
       attribution: tileConfig.attribution,
       maxZoom: tileConfig.maxZoom,
+      maxNativeZoom: tileConfig.maxNativeZoom || tileConfig.maxZoom,
       subdomains: tileConfig.subdomains || ['a', 'b', 'c'],
       className: selectedTile === 'midnight' ? 'midnight-tiles' : '',
     }).addTo(map);
     tileLayerRef.current = tileLayer;
 
-    // For Esri Dark Canvas, add crisp white labels/reference layer overlay
+    // For Esri Dark Canvas, add crisp white labels/reference layer overlay (with maxNativeZoom: 16)
     if (selectedTile === 'dark') {
       const labelLayer = L.tileLayer(
         'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
         {
           attribution: '',
-          maxZoom: 18,
+          maxZoom: 19,
+          maxNativeZoom: 16,
         }
       ).addTo(map);
       labelLayerRef.current = labelLayer;
@@ -153,6 +143,7 @@ export default function RouteMap({
     const newTileLayer = L.tileLayer(tileConfig.url, {
       attribution: tileConfig.attribution,
       maxZoom: tileConfig.maxZoom,
+      maxNativeZoom: tileConfig.maxNativeZoom || tileConfig.maxZoom,
       subdomains: tileConfig.subdomains || ['a', 'b', 'c'],
       className: selectedTile === 'midnight' ? 'midnight-tiles' : '',
     }).addTo(map);
@@ -160,43 +151,19 @@ export default function RouteMap({
     tileLayerRef.current = newTileLayer;
     newTileLayer.bringToBack();
 
-    // For Esri Dark Canvas, add crisp white labels/reference layer overlay
+    // For Esri Dark Canvas, add crisp white labels/reference layer overlay (with maxNativeZoom: 16)
     if (selectedTile === 'dark') {
       const newLabelLayer = L.tileLayer(
         'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
         {
           attribution: '',
-          maxZoom: 18,
+          maxZoom: 19,
+          maxNativeZoom: 16,
         }
       ).addTo(map);
       labelLayerRef.current = newLabelLayer;
     }
   }, [selectedTile]);
-
-  // Update blueprint polyline (GPS Art target wireframe)
-  useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-
-    if (blueprintPolylineRef.current) {
-      map.removeLayer(blueprintPolylineRef.current);
-      blueprintPolylineRef.current = null;
-    }
-
-    if (isArtMode && blueprintCoords && blueprintCoords.length > 1 && showBlueprint) {
-      const latlngs = blueprintCoords.map((c) => [c.lat, c.lng] as [number, number]);
-      const blueprint = L.polyline(latlngs, {
-        color: '#06b6d4', // neon cyan
-        weight: 2,
-        opacity: 0.8,
-        dashArray: '6, 6',
-        lineCap: 'round',
-        lineJoin: 'round',
-      }).addTo(map);
-
-      blueprintPolylineRef.current = blueprint;
-    }
-  }, [blueprintCoords, showBlueprint, isArtMode]);
 
   // Update routed polyline with Distance Gradient (Perkecil ukuran agar tidak menumpuk)
   useEffect(() => {
@@ -323,45 +290,13 @@ export default function RouteMap({
     }
   }, [hoverLocation]);
 
-  // Update Markers (Start, Finish, Waypoints, Art Center)
+  // Update Markers (Start, Finish, Waypoints)
   useEffect(() => {
     const map = mapInstanceRef.current;
     const markersGroup = markersGroupRef.current;
     if (!map || !markersGroup) return;
 
     markersGroup.clearLayers();
-
-    // Render center marker for art mode
-    if (isArtMode && centerLocation) {
-      const centerIcon = L.divIcon({
-        className: 'custom-pin-center-wrapper',
-        html: `
-          <div class="custom-pin-center cursor-grab active:cursor-grabbing" title="Pusat GPS Art (Geser untuk memindahkan pola)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="3"></circle>
-              <path d="M12 2v3m0 14v3M2 12h3m14 0h3"></path>
-            </svg>
-          </div>
-        `,
-        iconSize: [28, 28],
-        iconAnchor: [14, 14],
-      });
-
-      const centerMarker = L.marker([centerLocation.lat, centerLocation.lng], {
-        icon: centerIcon,
-        draggable: !!onCenterDrag,
-      }).addTo(markersGroup);
-
-      if (onCenterDrag) {
-        centerMarker.on('dragend', (e) => {
-          const target = e.target as L.Marker;
-          const pos = target.getLatLng();
-          onCenterDrag({ lat: pos.lat, lng: pos.lng });
-        });
-      }
-
-      centerMarker.bindPopup('<b class="text-slate-900 font-sans">Titik Pusat Gambar GPS Art (Bisa Digeser)</b>');
-    }
 
     // Render waypoints (Start, Finish, intermediate pins)
     waypoints.forEach((wp, idx) => {
@@ -441,7 +376,7 @@ export default function RouteMap({
         marker.bindPopup(popupDiv, { closeButton: false, offset: [0, -10] });
       }
     });
-  }, [waypoints, isArtMode, centerLocation, onWaypointDrag, onCenterDrag, onWaypointDelete]);
+  }, [waypoints, onWaypointDrag, onWaypointDelete]);
 
   // Center or Fit Bounds
   const fitToRoute = useCallback(() => {
@@ -457,10 +392,8 @@ export default function RouteMap({
     } else if (waypoints.length > 0) {
       const bounds = L.latLngBounds(waypoints.map((w) => [w.lat, w.lng]));
       map.fitBounds(bounds, { padding: [80, 80], maxZoom: 16 });
-    } else if (centerLocation) {
-      map.setView([centerLocation.lat, centerLocation.lng], 14, { animate: true });
     }
-  }, [routeData, waypoints, centerLocation]);
+  }, [routeData, waypoints]);
 
   // Handle Current Location
   const handleLocateMe = useCallback(() => {

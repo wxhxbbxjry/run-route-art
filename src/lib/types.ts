@@ -9,7 +9,7 @@ export interface Waypoint extends LatLng {
   isCustom?: boolean;
 }
 
-export type RouteMode = 'manual' | 'random' | 'art';
+export type RouteMode = 'manual' | 'random';
 
 export type UnitSystem = 'km' | 'mi';
 
@@ -29,18 +29,6 @@ export interface RouteData {
   source: 'osrm' | 'direct';
   mode: RouteMode;
   targetDistanceKm?: number;
-  shapeName?: string;
-}
-
-export type GpsShapeKey = 'heart' | 'star' | 'cube' | 'cat' | 'dog' | 'crown';
-
-export interface GpsShape {
-  id: GpsShapeKey;
-  name: string;
-  category: string;
-  description: string;
-  iconName: string;
-  points: [number, number][]; // normalized coordinates in range [-0.5, 0.5]
 }
 
 export type TileLayerId = 'dark' | 'standard' | 'midnight' | 'hot' | 'satellite';
@@ -51,6 +39,7 @@ export interface TileLayerOption {
   url: string;
   attribution: string;
   maxZoom: number;
+  maxNativeZoom?: number;
   subdomains?: string[];
 }
 

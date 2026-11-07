@@ -62,9 +62,7 @@ export default function SavedRoutesModal({
 
     if (currentRouteData) {
       const modeLabel =
-        currentRouteData.mode === 'art'
-          ? `GPS Art ${currentRouteData.shapeName || ''}`
-          : currentRouteData.mode === 'random'
+        currentRouteData.mode === 'random'
           ? `Loop ${currentRouteData.distanceKm.toFixed(1)}K`
           : `Rute Manual ${currentRouteData.distanceKm.toFixed(1)}K`;
       setNewRouteName(modeLabel.trim());

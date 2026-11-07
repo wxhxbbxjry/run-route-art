@@ -113,12 +113,11 @@ export function generateGeoJson(
     type: 'FeatureCollection',
     metadata: {
       name: routeName,
-      generator: 'Run Route & Art Planner',
+      generator: 'RunRoute PRO',
       distanceKm: Number(route.distanceKm.toFixed(3)),
       elevationGainM: route.elevationGainM,
       elevationLossM: route.elevationLossM,
       mode: route.mode,
-      shapeName: route.shapeName,
       isSnapped: route.isSnapped,
     },
     features: [
