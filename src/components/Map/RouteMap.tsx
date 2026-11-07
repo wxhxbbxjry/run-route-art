@@ -50,6 +50,7 @@ export default function RouteMap({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const labelLayerRef = useRef<L.TileLayer | null>(null);
   const routeGroupRef = useRef<L.LayerGroup | null>(null);
   const blueprintPolylineRef = useRef<L.Polyline | null>(null);
   const markersGroupRef = useRef<L.LayerGroup | null>(null);
@@ -87,9 +88,21 @@ export default function RouteMap({
       attribution: tileConfig.attribution,
       maxZoom: tileConfig.maxZoom,
       subdomains: tileConfig.subdomains || ['a', 'b', 'c'],
-      className: selectedTile === 'dark' ? 'dark-tiles' : '',
+      className: selectedTile === 'midnight' ? 'midnight-tiles' : '',
     }).addTo(map);
     tileLayerRef.current = tileLayer;
+
+    // For Esri Dark Canvas, add crisp white labels/reference layer overlay
+    if (selectedTile === 'dark') {
+      const labelLayer = L.tileLayer(
+        'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+        {
+          attribution: '',
+          maxZoom: 18,
+        }
+      ).addTo(map);
+      labelLayerRef.current = labelLayer;
+    }
 
     // Objek Vital Nasional (Sterile Zone) Indicators Layer
     const obvitnasGroup = L.layerGroup().addTo(map);
@@ -129,6 +142,11 @@ export default function RouteMap({
 
     if (tileLayerRef.current) {
       map.removeLayer(tileLayerRef.current);
+      tileLayerRef.current = null;
+    }
+    if (labelLayerRef.current) {
+      map.removeLayer(labelLayerRef.current);
+      labelLayerRef.current = null;
     }
 
     const tileConfig = TILE_LAYERS[selectedTile] || TILE_LAYERS.dark;
@@ -136,11 +154,23 @@ export default function RouteMap({
       attribution: tileConfig.attribution,
       maxZoom: tileConfig.maxZoom,
       subdomains: tileConfig.subdomains || ['a', 'b', 'c'],
-      className: selectedTile === 'dark' ? 'dark-tiles' : '',
+      className: selectedTile === 'midnight' ? 'midnight-tiles' : '',
     }).addTo(map);
 
     tileLayerRef.current = newTileLayer;
     newTileLayer.bringToBack();
+
+    // For Esri Dark Canvas, add crisp white labels/reference layer overlay
+    if (selectedTile === 'dark') {
+      const newLabelLayer = L.tileLayer(
+        'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+        {
+          attribution: '',
+          maxZoom: 18,
+        }
+      ).addTo(map);
+      labelLayerRef.current = newLabelLayer;
+    }
   }, [selectedTile]);
 
   // Update blueprint polyline (GPS Art target wireframe)

@@ -210,8 +210,14 @@ body {
   cursor: grabbing !important;
 }
 
-/* Free OpenStreetMap Dark Mode Tile Inversion (No API Key, No Watermark) */
-.dark-tiles {
-  filter: brightness(0.65) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7) !important;
+/* Leaflet dark container background (prevents white flashes during panning/loading) */
+.leaflet-container {
+  background: #0b0f19 !important;
+}
+
+/* Clean Midnight Inversion for OpenStreetMap (No API Key, No Watermark, Crisp White Labels) */
+.midnight-tiles .leaflet-tile,
+.midnight-tiles img {
+  filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%) !important;
 }
 

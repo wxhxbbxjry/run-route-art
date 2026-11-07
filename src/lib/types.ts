@@ -43,7 +43,7 @@ export interface GpsShape {
   points: [number, number][]; // normalized coordinates in range [-0.5, 0.5]
 }
 
-export type TileLayerId = 'dark' | 'standard' | 'hot' | 'satellite';
+export type TileLayerId = 'dark' | 'standard' | 'midnight' | 'hot' | 'satellite';
 
 export interface TileLayerOption {
   id: TileLayerId;
