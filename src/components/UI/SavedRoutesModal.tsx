@@ -184,36 +184,36 @@ export default function SavedRoutesModal({
   const isMiles = unitSystem === 'mi';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg glass-panel rounded-3xl border border-slate-700/80 shadow-2xl overflow-hidden flex flex-col max-h-[88vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="relative w-full max-w-lg bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[88vh] text-slate-900">
         {/* Header */}
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/60">
+        <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-white">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-lime-500/20 text-lime-400 flex items-center justify-center border border-lime-500/30">
+            <div className="w-8 h-8 rounded-xl bg-orange-50 text-[#fc4c02] flex items-center justify-center border border-orange-200">
               <FolderOpen className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-white">Kelola Rute & Impor GPX</h2>
-              <p className="text-[11px] text-slate-400">Simpan rute lari Anda atau buka file GPX</p>
+              <h2 className="text-sm font-black text-slate-900">Kelola Rute &amp; Impor GPX</h2>
+              <p className="text-[11px] text-slate-500">Simpan rute lari Anda atau buka file GPX</p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition"
+            className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 flex items-center justify-center transition"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Tab Switcher */}
-        <div className="grid grid-cols-2 p-2 bg-slate-950/70 border-b border-slate-800 gap-1.5">
+        <div className="grid grid-cols-2 p-2 bg-slate-100 border-b border-slate-200 gap-1.5">
           <button
             onClick={() => setActiveTab('saved')}
             className={`py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
               activeTab === 'saved'
-                ? 'bg-lime-500 text-slate-950 shadow-[0_0_12px_rgba(163,230,53,0.3)]'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-[#fc4c02] text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
             }`}
           >
             <BookmarkCheck className="w-3.5 h-3.5" />
@@ -224,8 +224,8 @@ export default function SavedRoutesModal({
             onClick={() => setActiveTab('import')}
             className={`py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
               activeTab === 'import'
-                ? 'bg-lime-500 text-slate-950 shadow-[0_0_12px_rgba(163,230,53,0.3)]'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-[#fc4c02] text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
             }`}
           >
             <Upload className="w-3.5 h-3.5" />
@@ -234,17 +234,17 @@ export default function SavedRoutesModal({
         </div>
 
         {/* Content Area */}
-        <div className="p-4 overflow-y-auto flex-1 space-y-4">
+        <div className="p-4 overflow-y-auto flex-1 space-y-4 bg-white">
           {activeTab === 'saved' && (
             <div className="space-y-4">
               {/* Save current active route card */}
               {currentRouteData && currentRouteData.coordinates.length > 1 && (
-                <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-lime-500/30 space-y-2.5">
+                <div className="p-3.5 rounded-2xl bg-orange-50/70 border border-orange-200 space-y-2.5">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-lime-400 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Rute Aktif Saat Ini
+                    <span className="font-bold text-[#c93b00] flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[#fc4c02]" /> Rute Aktif Saat Ini
                     </span>
-                    <span className="font-mono text-slate-300 font-bold">
+                    <span className="font-mono text-slate-800 font-bold">
                       {isMiles
                         ? `${kmToMiles(currentRouteData.distanceKm).toFixed(2)} MI`
                         : `${currentRouteData.distanceKm.toFixed(2)} KM`}
@@ -258,18 +258,18 @@ export default function SavedRoutesModal({
                         value={newRouteName}
                         onChange={(e) => setNewRouteName(e.target.value)}
                         placeholder="Nama rute (contoh: 10K Senayan Loop)"
-                        className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-lime-500"
+                        className="flex-1 bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#fc4c02]"
                         autoFocus
                       />
                       <button
                         onClick={handleSaveCurrentRoute}
-                        className="px-3 py-1.5 rounded-xl bg-lime-500 hover:bg-lime-400 text-slate-950 font-bold text-xs transition"
+                        className="px-3 py-1.5 rounded-xl bg-[#fc4c02] hover:bg-[#e34402] text-white font-bold text-xs transition"
                       >
                         Simpan
                       </button>
                       <button
                         onClick={() => setIsSaving(false)}
-                        className="px-2.5 py-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white text-xs transition"
+                        className="px-2.5 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 text-xs font-semibold transition"
                       >
                         Batal
                       </button>
@@ -277,7 +277,7 @@ export default function SavedRoutesModal({
                   ) : (
                     <button
                       onClick={() => setIsSaving(true)}
-                      className="w-full py-2 rounded-xl bg-lime-500/20 hover:bg-lime-500/30 text-lime-400 font-semibold text-xs border border-lime-500/40 flex items-center justify-center gap-1.5 transition active:scale-95"
+                      className="w-full py-2 rounded-xl bg-[#fc4c02] hover:bg-[#e34402] text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition active:scale-95"
                     >
                       <BookmarkCheck className="w-3.5 h-3.5" />
                       <span>Simpan Rute Ini ke Daftar</span>
@@ -289,8 +289,8 @@ export default function SavedRoutesModal({
               {/* Saved routes list */}
               {savedRoutes.length === 0 ? (
                 <div className="text-center py-8 text-slate-500 text-xs space-y-1">
-                  <BookmarkCheck className="w-8 h-8 mx-auto opacity-40 mb-2" />
-                  <p className="font-medium text-slate-400">Belum ada rute tersimpan.</p>
+                  <BookmarkCheck className="w-8 h-8 mx-auto text-slate-300 mb-2" />
+                  <p className="font-bold text-slate-700">Belum ada rute tersimpan.</p>
                   <p>Buat rute di peta lalu klik tombol simpan di atas.</p>
                 </div>
               ) : (
@@ -298,18 +298,18 @@ export default function SavedRoutesModal({
                   {savedRoutes.map((item) => (
                     <div
                       key={item.id}
-                      className="p-3 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-slate-700 transition flex items-center justify-between gap-3"
+                      className="p-3 rounded-2xl bg-slate-50 border border-slate-200 hover:border-slate-300 transition flex items-center justify-between gap-3"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold text-slate-200 truncate">{item.name}</p>
-                        <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-1">
-                          <span className="font-mono text-lime-400 font-semibold">
+                        <p className="text-xs font-bold text-slate-900 truncate">{item.name}</p>
+                        <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-1">
+                          <span className="font-mono text-[#fc4c02] font-bold">
                             {isMiles
                               ? `${kmToMiles(item.routeData.distanceKm).toFixed(2)} MI`
                               : `${item.routeData.distanceKm.toFixed(2)} KM`}
                           </span>
                           <span>&bull;</span>
-                          <span className="text-emerald-400">+{item.routeData.elevationGainM}m</span>
+                          <span className="text-emerald-700 font-semibold">+{item.routeData.elevationGainM}m</span>
                           <span>&bull;</span>
                           <span className="flex items-center gap-1 text-slate-500">
                             <Calendar className="w-2.5 h-2.5" />
@@ -328,21 +328,21 @@ export default function SavedRoutesModal({
                             onAddToast('success', 'Rute Dimuat', `"${item.name}" ditampilkan di peta.`);
                             onClose();
                           }}
-                          className="px-2.5 py-1.5 rounded-lg bg-lime-500/20 hover:bg-lime-500/30 text-lime-300 font-bold text-[11px] transition"
+                          className="px-2.5 py-1.5 rounded-lg bg-[#fc4c02] hover:bg-[#e34402] text-white font-bold text-[11px] transition"
                         >
                           Muat
                         </button>
                         <button
                           onClick={() => handleDownloadSavedGpx(item)}
                           title="Unduh GPX"
-                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                          className="p-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition"
                         >
                           <Download className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => handleDeleteRoute(item.id, item.name)}
                           title="Hapus Rute"
-                          className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition"
+                          className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 transition"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -367,20 +367,20 @@ export default function SavedRoutesModal({
                 onClick={() => fileInputRef.current?.click()}
                 className={`p-8 rounded-3xl border-2 border-dashed flex flex-col items-center justify-center text-center cursor-pointer transition ${
                   isDragging
-                    ? 'border-lime-400 bg-lime-500/10 scale-[0.99]'
-                    : 'border-slate-700 hover:border-slate-500 bg-slate-900/50'
+                    ? 'border-[#fc4c02] bg-orange-50 scale-[0.99]'
+                    : 'border-slate-300 hover:border-[#fc4c02]/60 bg-slate-50'
                 }`}
               >
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-lime-400/20 to-emerald-500/20 text-lime-400 flex items-center justify-center mb-3 border border-lime-500/30">
+                <div className="w-12 h-12 rounded-2xl bg-orange-100 text-[#fc4c02] flex items-center justify-center mb-3 border border-orange-200">
                   <FileUp className="w-6 h-6" />
                 </div>
-                <p className="text-xs font-bold text-slate-200">
-                  Tarik & Lepas File .GPX ke Sini
+                <p className="text-xs font-bold text-slate-900">
+                  Tarik &amp; Lepas File .GPX ke Sini
                 </p>
-                <p className="text-[11px] text-slate-400 mt-1">
+                <p className="text-[11px] text-slate-500 mt-1">
                   Atau klik untuk memilih file dari perangkat Anda
                 </p>
-                <span className="mt-3 px-3 py-1 rounded-full bg-slate-800 text-[10px] text-slate-300 font-mono">
+                <span className="mt-3 px-3 py-1 rounded-full bg-white border border-slate-200 text-[10px] text-slate-600 font-mono">
                   Mendukung Strava, Garmin, Coros, Komoot
                 </span>
                 <input
@@ -397,14 +397,14 @@ export default function SavedRoutesModal({
               </div>
 
               {/* Info guidelines */}
-              <div className="p-3 rounded-2xl bg-slate-900/60 border border-slate-800 text-xs text-slate-400 space-y-1.5">
-                <p className="font-semibold text-slate-300 flex items-center gap-1.5">
-                  <FileCode className="w-3.5 h-3.5 text-lime-400" />
+              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1.5">
+                <p className="font-bold text-slate-800 flex items-center gap-1.5">
+                  <FileCode className="w-3.5 h-3.5 text-[#fc4c02]" />
                   Format yang Didukung:
                 </p>
-                <ul className="list-disc list-inside text-[11px] space-y-1 pl-1 text-slate-400">
+                <ul className="list-disc list-inside text-[11px] space-y-1 pl-1 text-slate-600">
                   <li>File GPX standar versi 1.0 dan 1.1</li>
-                  <li>Data elevasi dan jarak akan otomatis dihitung & divisualisasikan</li>
+                  <li>Data elevasi dan jarak akan otomatis dihitung &amp; divisualisasikan</li>
                   <li>Rute hasil impor dapat langsung diedit dengan Manual Tap atau diunduh ulang</li>
                 </ul>
               </div>

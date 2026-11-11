@@ -4,16 +4,17 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "postinstall": "node -e \"const fs=require('fs'); if(fs.existsSync('node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs')) fs.copyFileSync('node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs', 'public/maplibre-gl-worker.js');\"",
+    "prebuild": "node -e \"const fs=require('fs'); ['out','.next','public/_next','public/index.html','public/404.html','public/index.txt'].forEach(p=>fs.rmSync(p,{recursive:true,force:true})); fs.copyFileSync('node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs', 'public/maplibre-gl-worker.js');\"",
     "build": "next build && node -e \"const fs=require('fs'); if (fs.existsSync('out')) fs.cpSync('out', 'public', {recursive: true});\"",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
     "@types/canvas-confetti": "^1.9.0",
-    "@types/leaflet": "^1.9.22",
     "canvas-confetti": "^1.9.4",
-    "leaflet": "^1.9.4",
     "lucide-react": "^1.70.0",
+    "maplibre-gl": "^6.17.0",
     "next": "14.2.35",
     "react": "^18",
     "react-dom": "^18"

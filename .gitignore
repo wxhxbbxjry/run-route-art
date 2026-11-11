@@ -13,6 +13,13 @@
 /.next/
 /out/
 
+# generated static export mirror inside public (kept untracked)
+/public/_next/
+/public/index.html
+/public/404.html
+/public/index.txt
+/public/maplibre-gl-worker.js
+
 # production
 /build
 

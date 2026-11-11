@@ -14,7 +14,8 @@ export const metadata: Metadata = {
     'Strava Route GPX',
     'Garmin Route',
     'GPX Export',
-    'Leaflet',
+    'MapLibre GL',
+    'OpenFreeMap',
     'OSRM',
   ],
   authors: [{ name: 'RunRoute PRO' }],
@@ -25,7 +26,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: '#080c14',
+  themeColor: '#fc4c02',
 };
 
 export default function RootLayout({
@@ -34,8 +35,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="id" className="dark">
-      <body className="antialiased bg-[#080c14] text-slate-100 overflow-hidden w-screen h-screen">
+    <html lang="id">
+      <head>
+        <link rel="preconnect" href="https://tiles.openfreemap.org" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://tiles.openfreemap.org" />
+        <link rel="preconnect" href="https://router.project-osrm.org" crossOrigin="anonymous" />
+      </head>
+      <body className="antialiased bg-[#f4f3ef] text-slate-900 overflow-hidden w-screen h-screen">
         {children}
       </body>
     </html>

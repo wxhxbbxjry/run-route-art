@@ -24,7 +24,6 @@ export default function SearchBar({ onSelectLocation }: SearchBarProps) {
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Debounced search query
   useEffect(() => {
     if (query.trim().length < 3) {
       setResults([]);
@@ -44,7 +43,6 @@ export default function SearchBar({ onSelectLocation }: SearchBarProps) {
         )}&limit=5`;
         const res = await fetch(url, {
           headers: {
-            'User-Agent': 'RunRouteArtApp/1.0',
             Accept: 'application/json',
           },
         });
@@ -65,7 +63,6 @@ export default function SearchBar({ onSelectLocation }: SearchBarProps) {
     };
   }, [query]);
 
-  // Click outside listener
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -85,11 +82,11 @@ export default function SearchBar({ onSelectLocation }: SearchBarProps) {
   };
 
   return (
-    <div ref={containerRef} className="relative w-full max-w-sm">
-      <div className="relative flex items-center rounded-2xl glass-pill shadow-xl border border-slate-700/60 overflow-hidden">
+    <div ref={containerRef} className="relative w-full">
+      <div className="relative flex items-center rounded-2xl strava-card focus-within:border-[#fc4c02] transition overflow-hidden">
         <div className="pl-3.5 pr-2 text-slate-400">
           {isLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin text-lime-400" />
+            <Loader2 className="w-4 h-4 animate-spin text-[#fc4c02]" />
           ) : (
             <Search className="w-4 h-4" />
           )}
@@ -103,7 +100,7 @@ export default function SearchBar({ onSelectLocation }: SearchBarProps) {
             if (results.length > 0) setIsOpen(true);
           }}
           placeholder="Cari lokasi lari (misal: GBK, Monas, UI)..."
-          className="w-full py-2.5 pr-8 bg-transparent text-xs text-white placeholder-slate-400 focus:outline-none"
+          className="w-full py-2.5 pr-8 bg-transparent text-xs font-medium text-slate-900 placeholder-slate-400 focus:outline-none"
         />
 
         {query && (
@@ -113,25 +110,24 @@ export default function SearchBar({ onSelectLocation }: SearchBarProps) {
               setResults([]);
               setIsOpen(false);
             }}
-            className="absolute right-2.5 p-1 text-slate-400 hover:text-white"
+            className="absolute right-2.5 p-1 text-slate-400 hover:text-slate-800"
           >
             <X className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
 
-      {/* Results Dropdown */}
       {isOpen && results.length > 0 && (
-        <div className="absolute left-0 right-0 top-12 mt-1 rounded-2xl glass-panel border border-slate-700/80 shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
-          <ul className="py-1 divide-y divide-slate-800/80">
+        <div className="absolute left-0 right-0 top-12 mt-1 rounded-2xl strava-card overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
+          <ul className="py-1 divide-y divide-slate-100">
             {results.map((res) => (
               <li key={res.place_id}>
                 <button
                   onClick={() => handleSelect(res)}
-                  className="w-full text-left px-3.5 py-2.5 hover:bg-slate-800/80 flex items-start gap-2.5 transition text-xs group"
+                  className="w-full text-left px-3.5 py-2.5 hover:bg-orange-50/70 flex items-start gap-2.5 transition text-xs group"
                 >
-                  <MapPin className="w-4 h-4 text-lime-400 shrink-0 mt-0.5 group-hover:scale-110 transition" />
-                  <span className="text-slate-200 group-hover:text-white leading-snug line-clamp-2">
+                  <MapPin className="w-4 h-4 text-[#fc4c02] shrink-0 mt-0.5 group-hover:scale-110 transition" />
+                  <span className="text-slate-700 group-hover:text-slate-950 font-medium leading-snug line-clamp-2">
                     {res.display_name}
                   </span>
                 </button>

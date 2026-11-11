@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useId } from 'react';
 import { ElevationPoint, UnitSystem } from '@/lib/types';
 import { Mountain, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { kmToMiles, metersToFeet } from '@/lib/geo';
@@ -29,10 +29,12 @@ export default function ElevationProfile({
   } | null>(null);
 
   const svgRef = useRef<SVGSVGElement>(null);
+  const rawGradId = useId();
+  const gradId = `elev-grad-${rawGradId.replace(/:/g, '')}`;
 
   if (!profile || profile.length < 2) {
     return (
-      <div className="p-3 text-center text-xs text-slate-400 glass-panel rounded-xl">
+      <div className="p-3 text-center text-xs text-slate-500 strava-card rounded-xl font-medium">
         Tambahkan waypoint untuk melihat profil elevasi rute.
       </div>
     );
@@ -61,7 +63,7 @@ export default function ElevationProfile({
   const pathD = `M ${points.join(' L ')}`;
   const areaD = `${pathD} L ${width - paddingX},${height} L ${paddingX},${height} Z`;
 
-  // Handle interactive scrubbing (OnTheGoMap style)
+  // Handle interactive scrubbing
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     if (!svgRef.current || distanceKm <= 0) return;
     const rect = svgRef.current.getBoundingClientRect();
@@ -103,33 +105,33 @@ export default function ElevationProfile({
     isMiles ? `${metersToFeet(m)} ft` : `${m} m`;
 
   return (
-    <div className="glass-panel p-3.5 rounded-2xl border border-slate-700/60 shadow-xl space-y-2.5">
+    <div className="strava-card p-3.5 rounded-2xl space-y-2.5 text-slate-900">
       {/* Header with stats */}
-      <div className="flex items-center justify-between text-xs">
-        <div className="flex items-center gap-1.5 font-semibold text-slate-200">
-          <Mountain className="w-4 h-4 text-emerald-400" />
+      <div className="flex items-center justify-between text-xs gap-2">
+        <div className="flex items-center gap-1.5 font-bold text-slate-800">
+          <Mountain className="w-4 h-4 text-[#fc4c02] shrink-0" />
           <span>Profil Elevasi</span>
           {hoverData && (
-            <span className="text-[10px] text-lime-400 font-mono font-bold bg-lime-500/10 px-2 py-0.5 rounded border border-lime-500/30">
+            <span className="text-[10px] text-[#c93b00] font-mono font-bold bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
               {displayDist(hoverData.distKm)} &bull; {displayElevation(hoverData.elevationM)}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3 text-[11px]">
-          <span className="flex items-center gap-0.5 text-emerald-400 font-medium">
+        <div className="flex items-center gap-2.5 text-[11px] shrink-0">
+          <span className="flex items-center gap-0.5 text-emerald-700 font-bold">
             <ArrowUpRight className="w-3.5 h-3.5" /> +{isMiles ? metersToFeet(gainM) + 'ft' : gainM + 'm'}
           </span>
-          <span className="flex items-center gap-0.5 text-rose-400 font-medium">
+          <span className="flex items-center gap-0.5 text-rose-600 font-bold">
             <ArrowDownRight className="w-3.5 h-3.5" /> -{isMiles ? metersToFeet(lossM) + 'ft' : lossM + 'm'}
           </span>
-          <span className="text-slate-400">
+          <span className="text-slate-500 font-mono">
             {displayElevation(minEle)} &ndash; {displayElevation(maxEle)}
           </span>
         </div>
       </div>
 
-      {/* Interactive SVG Chart */}
-      <div className="relative w-full overflow-hidden rounded-xl bg-slate-950/60 p-1 border border-slate-800/80 cursor-crosshair">
+      {/* Interactive Strava-Style Elevation Chart */}
+      <div className="relative w-full overflow-hidden rounded-xl bg-slate-50 p-1.5 border border-slate-200 cursor-crosshair">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${width} ${height}`}
@@ -139,26 +141,26 @@ export default function ElevationProfile({
           onMouseLeave={handleMouseLeave}
         >
           <defs>
-            <linearGradient id="elevationGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#10b981" stopOpacity="0.45" />
-              <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#fc4c02" stopOpacity="0.34" />
+              <stop offset="100%" stopColor="#fc4c02" stopOpacity="0.03" />
             </linearGradient>
           </defs>
 
           {/* Area fill */}
-          <path d={areaD} fill="url(#elevationGrad)" />
+          <path d={areaD} fill={`url(#${gradId})`} />
 
           {/* Line stroke */}
           <path
             d={pathD}
             fill="none"
-            stroke="#10b981"
+            stroke="#fc4c02"
             strokeWidth="2.5"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
 
-          {/* Vertical scrubber line on hover (OnTheGoMap feature) */}
+          {/* Vertical scrubber line on hover */}
           {hoverData && (
             <>
               <line
@@ -166,8 +168,8 @@ export default function ElevationProfile({
                 y1={0}
                 x2={hoverData.x}
                 y2={height}
-                stroke="#a3e635"
-                strokeWidth="2"
+                stroke="#1e293b"
+                strokeWidth="1.5"
                 strokeDasharray="3,3"
               />
               <circle
@@ -178,25 +180,25 @@ export default function ElevationProfile({
                   ((hoverData.elevationM - minEle) / eleSpan) * (height - 2 * paddingY)
                 }
                 r="4.5"
-                fill="#a3e635"
+                fill="#fc4c02"
                 stroke="#ffffff"
                 strokeWidth="2"
               />
             </>
           )}
 
-          {/* Distance tick marks */}
+          {/* Distance baseline */}
           <line
             x1={paddingX}
             y1={height - 2}
             x2={width - paddingX}
             y2={height - 2}
-            stroke="#334155"
+            stroke="#cbd5e1"
             strokeWidth="1"
           />
         </svg>
 
-        <div className="flex justify-between text-[10px] text-slate-500 px-2 mt-1">
+        <div className="flex justify-between text-[10px] text-slate-500 font-mono font-medium px-1.5 mt-1">
           <span>0 {unitSystem} (Start)</span>
           <span>{displayDist(distanceKm / 2)}</span>
           <span>{displayDist(distanceKm)} (Finish)</span>

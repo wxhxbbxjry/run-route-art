@@ -12,6 +12,8 @@ import {
   Route,
   FolderOpen,
   Undo2,
+  Mountain,
+  Download,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -35,6 +37,10 @@ interface SidebarProps {
   onReverseRoute: () => void;
   onOpenSavedRoutes?: () => void;
   unitSystem?: 'km' | 'mi';
+  onToggleUnit?: () => void;
+  showElevation?: boolean;
+  onToggleElevation?: () => void;
+  onOpenExport?: () => void;
   // Random Loop props
   startLocation: LatLng | null;
   targetDistanceKm: number;
@@ -66,6 +72,10 @@ export default function Sidebar({
   onReverseRoute,
   onOpenSavedRoutes,
   unitSystem = 'km',
+  onToggleUnit,
+  showElevation = false,
+  onToggleElevation,
+  onOpenExport,
   startLocation,
   targetDistanceKm,
   onTargetDistanceChange,
@@ -74,7 +84,7 @@ export default function Sidebar({
   onReRollLoop,
   isLoading,
 }: SidebarProps) {
-  const [isMobileExpanded, setIsMobileExpanded] = useState(false); // Default collapsed on mobile for maximum map view!
+  const [isMobileExpanded, setIsMobileExpanded] = useState(false);
 
   const distKm = routeData ? routeData.distanceKm : 0;
   const isMiles = unitSystem === 'mi';
@@ -83,64 +93,62 @@ export default function Sidebar({
 
   return (
     <>
-      {/* Desktop Floating Sidebar (Left Side) */}
-      <aside className="hidden md:flex flex-col w-[400px] h-[calc(100vh-2rem)] my-4 ml-4 rounded-3xl glass-panel shadow-2xl border border-slate-700/60 z-30 overflow-hidden shrink-0">
-        {/* Brand Header with Saved Routes Shortcut */}
-        <div className="p-4 border-b border-slate-800/80 flex items-center justify-between">
+      {/* Desktop Strava Route Builder Sidebar (Left Side) */}
+      <aside className="hidden md:flex flex-col w-[320px] lg:w-[400px] h-[calc(100vh-2rem)] my-4 ml-4 rounded-3xl sidebar-panel shadow-2xl z-30 overflow-hidden shrink-0 text-slate-900">
+        {/* Brand Header */}
+        <div className="p-3.5 border-b border-slate-200/80 flex items-center justify-between bg-white">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-lime-400 to-emerald-500 flex items-center justify-center text-slate-950 shadow-[0_0_15px_rgba(163,230,53,0.5)]">
+            <div className="w-9 h-9 rounded-xl bg-[#fc4c02] flex items-center justify-center text-white shadow-[0_4px_12px_rgba(252,76,2,0.35)]">
               <Route className="w-5 h-5 stroke-[2.5]" />
             </div>
             <div>
-              <h1 className="text-base font-black tracking-tight text-white flex items-center gap-1.5">
-                RunRoute <span className="text-lime-400 font-mono">PRO</span>
+              <h1 className="text-base font-black tracking-tight text-slate-900 flex items-center gap-1">
+                RunRoute <span className="text-[#fc4c02] font-mono">PRO</span>
               </h1>
-              <p className="text-[11px] text-slate-400 font-medium">
-                Smart Running Route & Loop Planner
+              <p className="text-[11px] text-slate-500 font-medium">
+                Strava-Style Route Builder
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {onOpenSavedRoutes && (
               <button
                 onClick={onOpenSavedRoutes}
                 title="Buka Rute Tersimpan & Impor GPX"
-                className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition active:scale-95"
+                className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 border border-slate-200 transition active:scale-95"
               >
-                <FolderOpen className="w-3.5 h-3.5 text-lime-400" />
-                <span>Rute & GPX</span>
+                <FolderOpen className="w-3.5 h-3.5 text-[#fc4c02]" />
+                <span>Rute &amp; GPX</span>
               </button>
             )}
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-lime-500/10 text-lime-400 border border-lime-500/30 font-semibold">
-              100% FREE
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
+              FREE
             </span>
           </div>
         </div>
 
         {/* Mode Navigation Tabs (Manual Tap & Random Loop) */}
-        <div className="p-3 border-b border-slate-800/60 bg-slate-950/40">
-          <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-slate-900/90 border border-slate-800">
-            {/* Manual Tab */}
+        <div className="px-3 py-2.5 border-b border-slate-200/70 bg-slate-50/80">
+          <div className="grid grid-cols-2 gap-1.5 p-1 rounded-2xl bg-slate-200/70 border border-slate-200">
             <button
               onClick={() => onModeChange('manual')}
               className={`py-2 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
                 currentMode === 'manual'
-                  ? 'bg-lime-500 text-slate-950 shadow-[0_0_12px_rgba(163,230,53,0.4)]'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                  ? 'bg-[#fc4c02] text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
               }`}
             >
               <MousePointerClick className="w-4 h-4" />
               <span>Manual Tap</span>
             </button>
 
-            {/* Random Loop Tab */}
             <button
               onClick={() => onModeChange('random')}
               className={`py-2 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
                 currentMode === 'random'
-                  ? 'bg-lime-500 text-slate-950 shadow-[0_0_12px_rgba(163,230,53,0.4)]'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                  ? 'bg-[#fc4c02] text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
               }`}
             >
               <Shuffle className="w-4 h-4" />
@@ -150,7 +158,7 @@ export default function Sidebar({
         </div>
 
         {/* Scrollable Tab Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-3.5 space-y-3 bg-white">
           {currentMode === 'manual' && (
             <ManualMode
               waypoints={waypoints}
@@ -188,42 +196,53 @@ export default function Sidebar({
         </div>
 
         {/* Footer info */}
-        <div className="p-3 border-t border-slate-800/60 text-[10px] text-slate-500 text-center bg-slate-950/60">
-          OSRM Routing & OpenStreetMap Free Lifetime Tiles &bull; Strava Ready
+        <div className="px-3 py-2.5 border-t border-slate-200/80 text-[10px] text-slate-500 text-center bg-slate-50 font-medium">
+          OpenFreeMap Vector &bull; OSRM Foot Routing &bull; 100% Free Strava Ready
         </div>
       </aside>
 
-      {/* Mobile Collapsible Bottom Sheet Panel (Optimized for Handhelds) */}
+      {/* Mobile Collapsible Bottom Sheet Panel */}
       <div
         className={`md:hidden fixed inset-x-0 bottom-0 z-40 transition-transform duration-300 ease-out ${
           isMobileExpanded ? 'translate-y-0' : 'translate-y-[calc(100%-4rem)]'
         }`}
       >
-        <div className="glass-panel rounded-t-3xl border-t border-slate-700/80 shadow-2xl overflow-hidden max-h-[82vh] flex flex-col">
+        <div className="bg-white text-slate-900 rounded-t-3xl border-t border-slate-200 shadow-2xl overflow-hidden max-h-[82vh] flex flex-col">
           {/* Mobile Docked Bar Header */}
-          <div className="p-3 flex items-center justify-between border-b border-slate-800 bg-slate-950/90 select-none">
-            {/* Left: Mode Badge & Live Distance */}
+          <div className="p-3 flex items-center justify-between border-b border-slate-200 bg-white select-none">
             <div
               onClick={() => setIsMobileExpanded(!isMobileExpanded)}
               className="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0"
             >
-              <div className="w-8 h-8 rounded-xl bg-lime-400 flex items-center justify-center text-slate-950 font-black text-xs shrink-0 shadow-[0_0_10px_rgba(163,230,53,0.5)]">
+              <div className="w-8 h-8 rounded-xl bg-[#fc4c02] flex items-center justify-center text-white font-black text-xs shrink-0 shadow-sm">
                 {currentMode === 'random' ? 'L' : 'M'}
               </div>
               <div className="min-w-0">
                 <div className="flex items-baseline gap-1">
-                  <span className="font-mono font-black text-base text-lime-400 leading-none">
+                  <span className="font-mono font-black text-base text-[#fc4c02] leading-none">
                     {displayDist.toFixed(2)}
                   </span>
-                  <span className="text-[10px] font-bold text-slate-400">{unitLabel}</span>
+                  {onToggleUnit ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleUnit();
+                      }}
+                      className="text-[10px] font-bold text-slate-700 bg-slate-100 px-1 rounded border border-slate-200"
+                    >
+                      {unitLabel}
+                    </button>
+                  ) : (
+                    <span className="text-[10px] font-bold text-slate-500">{unitLabel}</span>
+                  )}
                 </div>
-                <p className="text-[10px] text-slate-400 font-medium capitalize truncate">
+                <p className="text-[10px] text-slate-500 font-semibold capitalize truncate">
                   {currentMode === 'random' ? 'Random Loop' : 'Manual Tap'}
                 </p>
               </div>
             </div>
 
-            {/* Center-Right Quick Actions (Undo, GPX, Expand) */}
             <div className="flex items-center gap-1.5 shrink-0">
               {currentMode === 'manual' && (
                 <button
@@ -233,9 +252,39 @@ export default function Sidebar({
                   }}
                   disabled={waypoints.length === 0}
                   title="Undo Titik Terakhir"
-                  className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition active:scale-95 disabled:opacity-40"
+                  className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center transition active:scale-95 disabled:opacity-40"
                 >
                   <Undo2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+
+              {routeData && routeData.coordinates.length >= 2 && onToggleElevation && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleElevation();
+                  }}
+                  title="Lihat Grafik Elevasi"
+                  className={`w-8 h-8 rounded-xl flex items-center justify-center transition active:scale-95 border ${
+                    showElevation
+                      ? 'bg-orange-50 border-[#fc4c02] text-[#fc4c02]'
+                      : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  <Mountain className="w-3.5 h-3.5" />
+                </button>
+              )}
+
+              {routeData && routeData.coordinates.length >= 2 && onOpenExport && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenExport();
+                  }}
+                  title="Ekspor GPX / JSON"
+                  className="w-8 h-8 rounded-xl bg-[#fc4c02] hover:bg-[#e34402] text-white flex items-center justify-center shadow transition active:scale-95"
+                >
+                  <Download className="w-3.5 h-3.5" />
                 </button>
               )}
 
@@ -246,7 +295,7 @@ export default function Sidebar({
                     onOpenSavedRoutes();
                   }}
                   title="Kelola Rute & Impor GPX"
-                  className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-lime-400 flex items-center justify-center transition active:scale-95"
+                  className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#fc4c02] flex items-center justify-center transition active:scale-95"
                 >
                   <FolderOpen className="w-3.5 h-3.5" />
                 </button>
@@ -254,7 +303,7 @@ export default function Sidebar({
 
               <button
                 onClick={() => setIsMobileExpanded(!isMobileExpanded)}
-                className="px-2.5 py-1.5 rounded-xl bg-lime-500/10 text-lime-400 border border-lime-500/30 text-[11px] font-bold flex items-center gap-1 transition"
+                className="px-2.5 py-1.5 rounded-xl bg-orange-50 text-[#fc4c02] border border-orange-200 text-[11px] font-bold flex items-center gap-1 transition"
               >
                 <span>{isMobileExpanded ? 'Tutup' : 'Menu'}</span>
                 {isMobileExpanded ? (
@@ -266,14 +315,14 @@ export default function Sidebar({
             </div>
           </div>
 
-          {/* Mode Switcher Tabs (2 Modes) */}
-          <div className="grid grid-cols-2 gap-2 p-2 bg-slate-950/90 border-b border-slate-800">
+          {/* Mobile Mode Switcher */}
+          <div className="grid grid-cols-2 gap-2 p-2 bg-slate-50 border-b border-slate-200">
             <button
               onClick={() => onModeChange('manual')}
               className={`py-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
                 currentMode === 'manual'
-                  ? 'bg-lime-500 text-slate-950 shadow-[0_0_10px_rgba(163,230,53,0.4)]'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-[#fc4c02] text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <MousePointerClick className="w-3.5 h-3.5" />
@@ -283,8 +332,8 @@ export default function Sidebar({
               onClick={() => onModeChange('random')}
               className={`py-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
                 currentMode === 'random'
-                  ? 'bg-lime-500 text-slate-950 shadow-[0_0_10px_rgba(163,230,53,0.4)]'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-[#fc4c02] text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <Shuffle className="w-3.5 h-3.5" />
@@ -292,8 +341,8 @@ export default function Sidebar({
             </button>
           </div>
 
-          {/* Mobile Content */}
-          <div className="overflow-y-auto p-4 space-y-4 max-h-[60vh]">
+          {/* Mobile Scroll Content */}
+          <div className="overflow-y-auto p-4 space-y-3 max-h-[60vh]">
             {currentMode === 'manual' && (
               <ManualMode
                 waypoints={waypoints}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import {
   LatLng,
@@ -11,6 +11,7 @@ import {
   UnitSystem,
 } from '@/lib/types';
 import { getCoordinateAtDistance } from '@/lib/geo';
+import { loadStravaOutdoorStyle } from '@/lib/layers';
 import {
   fetchSmartManualRoute,
   generateAccurateLoop,
@@ -26,27 +27,33 @@ import Toast, { ToastMessage } from '@/components/UI/Toast';
 import SearchBar from '@/components/UI/SearchBar';
 import SavedRoutesModal from '@/components/UI/SavedRoutesModal';
 
-// Dynamically import Leaflet Map with SSR disabled
+// Dynamically import Vector/Raster Map with SSR disabled
 const RouteMap = dynamic(() => import('@/components/Map/RouteMap'), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full flex flex-col items-center justify-center bg-[#080c14] text-slate-400 gap-3">
-      <div className="w-10 h-10 border-4 border-lime-400 border-t-transparent rounded-full animate-spin" />
-      <span className="text-sm font-semibold text-slate-300">
-        Memuat Peta Interaktif & Engine Routing...
+    <div className="w-full h-full flex flex-col items-center justify-center bg-[#f4f3ef] text-slate-700 gap-3">
+      <div className="w-10 h-10 border-4 border-[#fc4c02] border-t-transparent rounded-full animate-spin" />
+      <span className="text-sm font-bold text-slate-700">
+        Memuat Peta Strava Style &amp; Engine Routing (100% Free)...
       </span>
     </div>
   ),
 });
 
 export default function HomePage() {
-  // Navigation & Mode
+  // Navigation & Mode (Clean Strava Standard Map Defaults)
   const [currentMode, setCurrentMode] = useState<RouteMode>('manual');
-  const [selectedTile, setSelectedTile] = useState<TileLayerId>('dark');
+  const [selectedTile, setSelectedTile] = useState<TileLayerId>('strava-outdoor');
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('km');
   const [isLoadingRoute, setIsLoadingRoute] = useState<boolean>(false);
   const [hoverLocation, setHoverLocation] = useState<LatLng | null>(null);
   const [flyToLocation, setFlyToLocation] = useState<LatLng | null>(null);
+  const [fitTrigger, setFitTrigger] = useState<number>(0);
+
+  // Prefetch Strava Standard Outdoor vector style immediately while MapLibre JS chunk initializes
+  useEffect(() => {
+    void loadStravaOutdoorStyle();
+  }, []);
 
   // 1. ISOLATED STATE: Manual Tap Mode
   const [manualWaypoints, setManualWaypoints] = useState<Waypoint[]>([]);
@@ -59,7 +66,7 @@ export default function HomePage() {
   // 2. ISOLATED STATE: Random Loop Generator Mode
   const [loopStartLocation, setLoopStartLocation] = useState<LatLng | null>({
     lat: -6.2088,
-    lng: 106.8456, // Central Jakarta default
+    lng: 106.822, // Sudirman - Semanggi - GBK runner corridor default
   });
   const [targetDistanceKm, setTargetDistanceKm] = useState<number>(10);
   const [loopHeadingOffset, setLoopHeadingOffset] = useState<number>(45);
@@ -245,6 +252,7 @@ export default function HomePage() {
         const loopWps = [{ id: 'start-point', lat: effectivePos.lat, lng: effectivePos.lng, name: 'Start / Finish' }];
         setLoopWaypoints(loopWps);
         setLoopRouteData(buildRouteData(loopWps, result, 'random', targetDistanceKm));
+        setFitTrigger((n) => n + 1);
       }
     },
     [
@@ -517,6 +525,7 @@ export default function HomePage() {
       setLoopWaypoints(loopWps);
       const built = buildRouteData(loopWps, result, 'random', targetDistanceKm);
       setLoopRouteData(built);
+      setFitTrigger((n) => n + 1);
 
       const accuracy = (
         (1 - Math.abs(result.distanceKm - targetDistanceKm) / targetDistanceKm) *
@@ -545,9 +554,7 @@ export default function HomePage() {
       setCurrentMode('manual');
       setManualWaypoints(loadedRoute.waypoints);
       setManualRouteData(loadedRoute);
-      if (loadedRoute.coordinates.length > 0) {
-        setFlyToLocation(loadedRoute.coordinates[0]);
-      }
+      setFitTrigger((n) => n + 1);
       addToast(
         'success',
         'Rute Berhasil Dimuat',
@@ -570,6 +577,7 @@ export default function HomePage() {
         if (currentMode === 'random') {
           setLoopStartLocation(userLoc);
         }
+        setFlyToLocation(userLoc);
         addToast(
           'success',
           'Lokasi GPS Terdeteksi',
@@ -583,23 +591,38 @@ export default function HomePage() {
     );
   }, [currentMode, addToast]);
 
+  const handleResetMap = useCallback(() => {
+    addToast(
+      'info',
+      'Settingan Map Direset',
+      'Kembali ke tampilan default Strava Standard, Heatmap Aktif & 2D.'
+    );
+  }, [addToast]);
+
   return (
-    <main className="relative w-screen h-screen overflow-hidden flex bg-[#080c14]">
-      {/* Search Location Bar (Mobile-friendly width, leaves right room for map buttons) */}
-      <div className="absolute top-3 left-3 right-16 md:left-1/2 md:right-auto md:-translate-x-1/2 z-20 w-auto md:w-full md:max-w-sm pointer-events-auto">
-        <SearchBar onSelectLocation={handleSelectSearchResult} />
+    <main className="relative w-screen h-screen overflow-hidden flex bg-[#f4f3ef]">
+      {/* Search Location Bar (Centered cleanly inside unobstructed map canvas) */}
+      <div className="fixed top-3 inset-x-3 md:left-[350px] lg:left-[432px] md:right-20 md:flex md:justify-center z-20 pointer-events-none">
+        <div className="w-full md:max-w-md pointer-events-auto">
+          <SearchBar onSelectLocation={handleSelectSearchResult} />
+        </div>
       </div>
 
-      {/* Interactive Fullscreen Map */}
-      <div className="absolute inset-0 z-0">
+      {/* Interactive Fullscreen Strava-Style Map */}
+      <div className="absolute inset-0">
         <RouteMap
           waypoints={activeWaypoints}
           routeData={activeRouteData}
+          routeMode={currentMode}
           selectedTile={selectedTile}
+          unitSystem={unitSystem}
+          hasElevationOpen={showElevation}
+          fitTrigger={fitTrigger}
           onTileChange={setSelectedTile}
           onMapClick={handleMapClick}
           onWaypointDrag={handleWaypointDrag}
           onWaypointDelete={handleWaypointDelete}
+          onResetMap={handleResetMap}
           hoverLocation={hoverLocation}
           flyToLocation={flyToLocation}
         />
@@ -611,9 +634,9 @@ export default function HomePage() {
         onModeChange={(m) => {
           setCurrentMode(m);
         }}
-        // Manual mode props
-        waypoints={manualWaypoints}
-        routeData={manualRouteData}
+        // Active mode route & waypoints
+        waypoints={activeWaypoints}
+        routeData={activeRouteData}
         snapToRoads={manualSnapToRoads}
         onToggleSnap={handleToggleManualSnap}
         onUndoWaypoint={handleUndoManualWaypoint}
@@ -629,6 +652,10 @@ export default function HomePage() {
         onToggleAvoidAlleys={handleToggleAvoidAlleys}
         onOpenSavedRoutes={() => setIsSavedRoutesOpen(true)}
         unitSystem={unitSystem}
+        onToggleUnit={() => setUnitSystem((u) => (u === 'km' ? 'mi' : 'km'))}
+        showElevation={showElevation}
+        onToggleElevation={() => setShowElevation((s) => !s)}
+        onOpenExport={() => setIsExportOpen(true)}
         // Random loop props
         startLocation={loopStartLocation}
         targetDistanceKm={targetDistanceKm}
@@ -640,7 +667,7 @@ export default function HomePage() {
       />
 
       {/* Floating Metrics HUD (Desktop) */}
-      <div className="hidden md:block absolute right-4 bottom-4 md:bottom-6 z-30 max-w-sm w-full space-y-3 pointer-events-none">
+      <div className="hidden md:block absolute right-4 bottom-4 md:bottom-6 z-30 md:max-w-[300px] lg:max-w-sm w-full space-y-3 pointer-events-none">
         {showElevation && activeRouteData && (
           <div className="pointer-events-auto animate-in slide-in-from-bottom-3 fade-in duration-200">
             <ElevationProfile
@@ -670,7 +697,7 @@ export default function HomePage() {
 
       {/* Mobile Floating Elevation Profile (Compact, directly above docked mobile bar) */}
       {showElevation && activeRouteData && (
-        <div className="md:hidden absolute inset-x-3 bottom-20 z-30 pointer-events-auto animate-in slide-in-from-bottom-2 fade-in">
+        <div className="md:hidden absolute inset-x-3 bottom-[76px] z-30 pointer-events-auto animate-in slide-in-from-bottom-2 fade-in">
           <ElevationProfile
             profile={activeRouteData.elevationProfile}
             gainM={activeRouteData.elevationGainM}

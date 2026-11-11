@@ -31,16 +31,21 @@ export interface RouteData {
   targetDistanceKm?: number;
 }
 
-export type TileLayerId = 'dark' | 'standard' | 'midnight' | 'hot' | 'satellite';
+export type TileLayerId = 'strava-outdoor' | 'strava-satellite' | 'strava-dark' | 'strava-trail';
 
 export interface TileLayerOption {
   id: TileLayerId;
   name: string;
-  url: string;
+  description: string;
+  swatch: string;
+  isDarkSurface: boolean;
+  kind: 'vector' | 'raster';
+  styleUrl?: string;
+  rasterTiles?: string[];
+  overlayTiles?: string[];
   attribution: string;
   maxZoom: number;
   maxNativeZoom?: number;
-  subdomains?: string[];
 }
 
 export interface SavedRoute {

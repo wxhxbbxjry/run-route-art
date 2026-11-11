@@ -1,15 +1,15 @@
-@import 'leaflet/dist/leaflet.css';
+@import 'maplibre-gl/dist/maplibre-gl.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --background: #080c14;
-  --foreground: #f3f4f6;
-  --neon-lime: #a3e635;
-  --neon-orange: #ff5500;
-  --neon-cyan: #06b6d4;
+  --background: #f4f3ef;
+  --foreground: #111827;
+  --strava-orange: #fc4c02;
+  --strava-orange-hover: #e34402;
+  --strava-green: #16a34a;
 }
 
 body {
@@ -20,204 +20,272 @@ body {
   user-select: none;
 }
 
-/* Custom scrollbars */
+/* Custom clean scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.6);
+  background: rgba(241, 245, 249, 0.7);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.3);
+  background: rgba(148, 163, 184, 0.45);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.6);
+  background: rgba(100, 116, 139, 0.7);
 }
 
-/* Leaflet dark theme customizations & smooth transitions */
-.leaflet-container {
+/* MapLibre GL clean map canvas */
+.maplibregl-map {
   width: 100%;
   height: 100%;
-  background-color: #0b111e !important;
   font-family: inherit;
   outline: none;
 }
 
-/* 100% Free Lifetime Cyber Dark Map using standard OpenStreetMap (Zero API Key / No Watermark) */
-.dark-map-mode .leaflet-tile {
-  filter: brightness(0.68) invert(1) contrast(1.55) hue-rotate(190deg) saturate(0.32) brightness(0.88);
-}
-
-/* Remove default Leaflet focus outline */
-.leaflet-container:focus {
+.maplibregl-canvas:focus {
   outline: none;
 }
 
-/* Hide default leaflet attribution flags if desired or style nicely */
-.leaflet-control-attribution {
-  background: rgba(10, 15, 26, 0.75) !important;
-  color: #94a3b8 !important;
+.manual-cursor-mode .maplibregl-canvas-container {
+  cursor: crosshair;
+}
+
+/* Reposition bottom-left controls (Scale Bar & Attribution) out of Sidebar & Mobile bar paths */
+.maplibregl-ctrl-bottom-left {
+  left: 10px !important;
+  bottom: 74px !important;
+  display: flex !important;
+  flex-direction: column-reverse !important;
+  align-items: flex-start !important;
+  gap: 6px !important;
+  z-index: 15 !important;
+  pointer-events: none;
+}
+
+.maplibregl-ctrl-bottom-left .maplibregl-ctrl {
+  margin: 0 !important;
+  pointer-events: auto;
+}
+
+@media (min-width: 768px) {
+  .maplibregl-ctrl-bottom-left {
+    left: 350px !important;
+    bottom: 16px !important;
+    max-width: calc(100vw - 680px);
+  }
+}
+
+@media (min-width: 1024px) {
+  .maplibregl-ctrl-bottom-left {
+    left: 432px !important;
+    bottom: 16px !important;
+    max-width: calc(100vw - 850px);
+  }
+}
+
+@media (max-width: 767px) {
+  .maplibregl-ctrl-bottom-left {
+    transition: opacity 0.2s ease;
+  }
+  .elevation-open-mobile .maplibregl-ctrl-bottom-left {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+/* Clean Strava Athlete Frosted Styling for MapLibre Attribution */
+.maplibregl-ctrl-attrib {
+  background: rgba(255, 255, 255, 0.92) !important;
+  color: #334155 !important;
   font-size: 10px !important;
-  backdrop-filter: blur(8px);
-  border-radius: 6px;
-  margin: 6px !important;
-  padding: 2px 8px !important;
+  border: 1px solid rgba(203, 213, 225, 0.9) !important;
+  border-radius: 9999px !important;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
 }
 
-.leaflet-control-attribution a {
-  color: #38bdf8 !important;
+.maplibregl-ctrl-attrib a {
+  color: #fc4c02 !important;
+  font-weight: 600;
 }
 
-/* Custom Leaflet Marker Icons */
+/* Clean Strava Scale Bar */
+.maplibregl-ctrl-scale {
+  background: rgba(255, 255, 255, 0.94) !important;
+  color: #1e293b !important;
+  border-color: #fc4c02 !important;
+  border-width: 0 2px 2.5px 2px !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  padding: 1px 7px !important;
+  border-radius: 0 0 4px 4px !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
+}
+
+/* Clean Strava Light Popups */
+.maplibregl-popup {
+  z-index: 25;
+}
+
+.maplibregl-popup-content {
+  background: rgba(255, 255, 255, 0.98) !important;
+  color: #0f172a !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(226, 232, 240, 1) !important;
+  box-shadow: 0 12px 28px -6px rgba(15, 23, 42, 0.22) !important;
+  padding: 9px 12px !important;
+}
+
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+  border-top-color: rgba(255, 255, 255, 0.98) !important;
+}
+.maplibregl-popup-anchor-top .maplibregl-popup-tip {
+  border-bottom-color: rgba(255, 255, 255, 0.98) !important;
+}
+.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: rgba(255, 255, 255, 0.98) !important;
+}
+.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: rgba(255, 255, 255, 0.98) !important;
+}
+
+/* Strava Signature Route Pins */
 .custom-pin-start {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: #10b981;
-  color: #000;
-  font-weight: 800;
-  font-size: 13px;
-  box-shadow: 0 0 16px rgba(16, 185, 129, 0.8), 0 2px 6px rgba(0, 0, 0, 0.6);
-  border: 2.5px solid #ffffff;
-  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.custom-pin-start:hover {
-  transform: scale(1.2);
-}
-
-.custom-pin-finish {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: #f43f5e;
-  color: #fff;
-  font-weight: 800;
-  font-size: 13px;
-  box-shadow: 0 0 16px rgba(244, 63, 94, 0.8), 0 2px 6px rgba(0, 0, 0, 0.6);
-  border: 2.5px solid #ffffff;
-  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.custom-pin-finish:hover {
-  transform: scale(1.2);
-}
-
-.custom-pin-waypoint {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: #0ea5e9;
-  color: #fff;
-  font-weight: 700;
-  font-size: 11px;
-  box-shadow: 0 0 10px rgba(14, 165, 233, 0.7);
-  border: 2px solid #ffffff;
-  transition: transform 0.15s ease;
-}
-
-.custom-pin-waypoint:hover {
-  transform: scale(1.25);
-  background: #38bdf8;
-}
-
-.custom-pin-center {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: #f59e0b;
-  color: #000;
-  box-shadow: 0 0 16px rgba(245, 158, 11, 0.85);
-  border: 2px solid #ffffff;
-  animation: pulse-ring 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+  background: #16a34a;
+  color: #ffffff;
+  font-weight: 900;
+  font-size: 12px;
+  box-shadow: 0 3px 10px rgba(22, 163, 74, 0.45), 0 2px 6px rgba(15, 23, 42, 0.35);
+  border: 2.5px solid #ffffff;
+  transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1);
+  cursor: grab;
 }
 
-@keyframes pulse-ring {
-  0% {
-    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
-  }
-  70% {
-    box-shadow: 0 0 0 14px rgba(245, 158, 11, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
-  }
+.custom-pin-start:hover {
+  transform: scale(1.16);
 }
 
-/* Glassmorphism utility classes */
+.custom-pin-closed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  height: 28px;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #16a34a 0%, #16a34a 49%, #1e293b 51%, #1e293b 100%);
+  color: #ffffff;
+  font-weight: 900;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.35);
+  border: 2.5px solid #ffffff;
+  transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1);
+  cursor: grab;
+}
+
+.custom-pin-closed:hover {
+  transform: scale(1.14);
+}
+
+.custom-pin-finish {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #111827;
+  color: #ffffff;
+  font-weight: 900;
+  font-size: 12px;
+  box-shadow: 0 3px 10px rgba(17, 24, 39, 0.45);
+  border: 2.5px solid #ffffff;
+  transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1);
+  cursor: grab;
+}
+
+.custom-pin-finish:hover {
+  transform: scale(1.16);
+}
+
+/* Strava-style crisp white dot with orange border */
+.custom-pin-waypoint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #fc4c02;
+  font-weight: 900;
+  font-size: 9px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.35);
+  border: 2.5px solid #fc4c02;
+  transition: transform 0.14s ease;
+  cursor: grab;
+}
+
+.custom-pin-waypoint:hover {
+  transform: scale(1.26);
+  background: #fc4c02;
+  color: #ffffff;
+}
+
+.custom-pin-start:active,
+.custom-pin-finish:active,
+.custom-pin-closed:active,
+.custom-pin-waypoint:active {
+  cursor: grabbing;
+}
+
+/* Crisp Strava-style Kilometer / Milepost Markers */
+.milepost-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  background: #111827;
+  border: 1.5px solid #ffffff;
+  color: #ffffff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.3;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.35);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* Clean Strava Panel Surfaces (no heavy blur-over-WebGL glitches) */
+.sidebar-panel {
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  isolation: isolate;
+}
+
+.strava-card {
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  box-shadow: 0 8px 24px -4px rgba(15, 23, 42, 0.12);
+}
+
 .glass-panel {
-  background: rgba(15, 23, 42, 0.82);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(226, 232, 240, 0.95);
 }
 
 .glass-pill {
-  background: rgba(15, 23, 42, 0.88);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(226, 232, 240, 0.95);
 }
-
-/* Neon glow polyline styles */
-.neon-glow-filter {
-  filter: drop-shadow(0 0 6px rgba(163, 230, 53, 0.65));
-}
-
-.neon-orange-filter {
-  filter: drop-shadow(0 0 6px rgba(249, 115, 22, 0.7));
-}
-
-/* Custom Leaflet Dark Popup */
-.leaflet-popup-content-wrapper {
-  background: rgba(15, 23, 42, 0.95) !important;
-  color: #f1f5f9 !important;
-  border-radius: 12px !important;
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6) !important;
-  backdrop-filter: blur(12px);
-  padding: 4px !important;
-}
-
-.leaflet-popup-tip {
-  background: rgba(15, 23, 42, 0.95) !important;
-}
-
-.leaflet-popup-content {
-  margin: 6px 10px !important;
-  line-height: 1.4 !important;
-}
-
-/* Draggable marker cursor */
-.leaflet-marker-draggable {
-  cursor: grab !important;
-}
-.leaflet-marker-draggable:active {
-  cursor: grabbing !important;
-}
-
-/* Leaflet dark container background (prevents white flashes during panning/loading) */
-.leaflet-container {
-  background: #0b0f19 !important;
-}
-
-/* Clean Midnight Inversion for OpenStreetMap (No API Key, No Watermark, Crisp White Labels) */
-.midnight-tiles .leaflet-tile,
-.midnight-tiles img {
-  filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%) !important;
-}
-

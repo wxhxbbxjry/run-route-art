@@ -272,16 +272,16 @@ export function getCoordinateAtDistance(
 
 /**
  * Computes a continuous vibrant gradient color for route distance progression.
- * 0% (Start: Electric Cyan) -> 25% (Emerald) -> 50% (Neon Lime) -> 75% (Amber) -> 100% (Finish: Electric Rose)
+ * Harmonized with Strava aesthetic:
+ * 0% (Start: Emerald Green) -> 30% (Warm Amber) -> 65% (Strava Orange #fc4c02) -> 100% (Finish Crimson)
  */
 export function getDistanceGradientColor(ratio: number): string {
   const t = Math.max(0, Math.min(1, ratio));
   const stops = [
-    { t: 0.0, r: 6, g: 182, b: 212 },   // #06b6d4 Cyan
-    { t: 0.25, r: 16, g: 185, b: 129 }, // #10b981 Emerald
-    { t: 0.5, r: 163, g: 230, b: 53 },  // #a3e635 Neon Lime
-    { t: 0.75, r: 245, g: 158, b: 11 }, // #f59e0b Amber
-    { t: 1.0, r: 244, g: 63, b: 94 },   // #f43f5e Electric Rose
+    { t: 0.0, r: 16, g: 185, b: 129 },  // #10b981 Emerald Start
+    { t: 0.3, r: 245, g: 158, b: 11 },  // #f59e0b Amber Gold
+    { t: 0.65, r: 252, g: 76, b: 2 },   // #fc4c02 Strava Signature Orange
+    { t: 1.0, r: 225, g: 29, b: 72 },   // #e11d48 Crimson Finish
   ];
 
   for (let i = 0; i < stops.length - 1; i++) {
@@ -295,7 +295,7 @@ export function getDistanceGradientColor(ratio: number): string {
       return `rgb(${r}, ${g}, ${b})`;
     }
   }
-  return '#f43f5e';
+  return '#fc4c02';
 }
 
 /**
@@ -351,4 +351,76 @@ export function buildGradientSegments(
   }
 
   return segments;
+}
+
+export interface RouteMilepost {
+  lat: number;
+  lng: number;
+  label: string;
+  value: number;
+}
+
+/**
+ * Generates distance milepost markers (1K, 2K, ... or 1MI, 2MI, ...) along a route polyline.
+ */
+export function buildRouteMileposts(
+  coordinates: LatLng[],
+  unitSystem: 'km' | 'mi' = 'km'
+): RouteMilepost[] {
+  if (!coordinates || coordinates.length < 2) return [];
+
+  const totalKm = calculatePolylineDistance(coordinates);
+  const stepKm = unitSystem === 'mi' ? 1.609344 : 1.0;
+  const maxMarks = unitSystem === 'mi' ? Math.floor(totalKm / stepKm) : Math.floor(totalKm);
+  if (maxMarks < 1) return [];
+
+  const mileposts: RouteMilepost[] = [];
+  let nextMarkerIndex = 1;
+  let accumulatedKm = 0;
+
+  for (let i = 0; i < coordinates.length - 1; i++) {
+    const p1 = coordinates[i];
+    const p2 = coordinates[i + 1];
+    const segKm = haversineDistance(p1, p2);
+    if (segKm <= 0) continue;
+
+    while (accumulatedKm + segKm >= nextMarkerIndex * stepKm && nextMarkerIndex <= 100) {
+      const targetKm = nextMarkerIndex * stepKm;
+      const ratio = (targetKm - accumulatedKm) / segKm;
+      mileposts.push({
+        lat: p1.lat + (p2.lat - p1.lat) * ratio,
+        lng: p1.lng + (p2.lng - p1.lng) * ratio,
+        label: unitSystem === 'mi' ? `${nextMarkerIndex} mi` : `${nextMarkerIndex}k`,
+        value: nextMarkerIndex,
+      });
+      nextMarkerIndex++;
+    }
+
+    accumulatedKm += segKm;
+  }
+
+  return mileposts;
+}
+
+/**
+ * Builds an accurate geographic circular GeoJSON ring [lng, lat][] for a center point & radiusKm.
+ */
+export function buildCirclePolygonCoords(
+  centerLat: number,
+  centerLng: number,
+  radiusKm: number,
+  steps: number = 48
+): [number, number][] {
+  const kmPerLat = 111.139;
+  const kmPerLng = kmPerLat * Math.cos((centerLat * Math.PI) / 180) || 1;
+  const coords: [number, number][] = [];
+
+  for (let i = 0; i <= steps; i++) {
+    const angle = (i / steps) * 2 * Math.PI;
+    const dLat = (radiusKm * Math.cos(angle)) / kmPerLat;
+    const dLng = (radiusKm * Math.sin(angle)) / kmPerLng;
+    coords.push([centerLng + dLng, centerLat + dLat]);
+  }
+
+  return coords;
 }
