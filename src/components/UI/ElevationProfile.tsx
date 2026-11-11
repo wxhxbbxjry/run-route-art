@@ -34,7 +34,7 @@ export default function ElevationProfile({
 
   if (!profile || profile.length < 2) {
     return (
-      <div className="p-3 text-center text-xs text-slate-500 strava-card rounded-xl font-medium">
+      <div className="p-3 text-center text-xs text-slate-500 dark:text-slate-400 strava-card rounded-xl font-medium">
         Tambahkan waypoint untuk melihat profil elevasi rute.
       </div>
     );
@@ -71,7 +71,6 @@ export default function ElevationProfile({
     const ratio = Math.max(0, Math.min(1, clientX / rect.width));
     const distAtCursor = ratio * distanceKm;
 
-    // Find closest elevation point
     let closest = profile[0];
     let minDiff = Math.abs(profile[0].distanceKm - distAtCursor);
 
@@ -105,33 +104,33 @@ export default function ElevationProfile({
     isMiles ? `${metersToFeet(m)} ft` : `${m} m`;
 
   return (
-    <div className="strava-card p-3.5 rounded-2xl space-y-2.5 text-slate-900">
+    <div className="strava-card p-3.5 rounded-2xl space-y-2.5 text-slate-900 dark:text-slate-100">
       {/* Header with stats */}
       <div className="flex items-center justify-between text-xs gap-2">
-        <div className="flex items-center gap-1.5 font-bold text-slate-800">
+        <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-100">
           <Mountain className="w-4 h-4 text-[#fc4c02] shrink-0" />
           <span>Profil Elevasi</span>
           {hoverData && (
-            <span className="text-[10px] text-[#c93b00] font-mono font-bold bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
+            <span className="text-[10px] text-[#c93b00] dark:text-orange-300 font-mono font-bold bg-orange-50 dark:bg-orange-950/60 px-2 py-0.5 rounded border border-orange-200 dark:border-orange-500/40">
               {displayDist(hoverData.distKm)} &bull; {displayElevation(hoverData.elevationM)}
             </span>
           )}
         </div>
         <div className="flex items-center gap-2.5 text-[11px] shrink-0">
-          <span className="flex items-center gap-0.5 text-emerald-700 font-bold">
+          <span className="flex items-center gap-0.5 text-emerald-700 dark:text-emerald-400 font-bold">
             <ArrowUpRight className="w-3.5 h-3.5" /> +{isMiles ? metersToFeet(gainM) + 'ft' : gainM + 'm'}
           </span>
-          <span className="flex items-center gap-0.5 text-rose-600 font-bold">
+          <span className="flex items-center gap-0.5 text-rose-600 dark:text-rose-400 font-bold">
             <ArrowDownRight className="w-3.5 h-3.5" /> -{isMiles ? metersToFeet(lossM) + 'ft' : lossM + 'm'}
           </span>
-          <span className="text-slate-500 font-mono">
+          <span className="text-slate-500 dark:text-slate-400 font-mono">
             {displayElevation(minEle)} &ndash; {displayElevation(maxEle)}
           </span>
         </div>
       </div>
 
       {/* Interactive Strava-Style Elevation Chart */}
-      <div className="relative w-full overflow-hidden rounded-xl bg-slate-50 p-1.5 border border-slate-200 cursor-crosshair">
+      <div className="relative w-full overflow-hidden rounded-xl bg-slate-50 dark:bg-slate-800/80 p-1.5 border border-slate-200 dark:border-slate-700 cursor-crosshair">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${width} ${height}`}
@@ -168,7 +167,7 @@ export default function ElevationProfile({
                 y1={0}
                 x2={hoverData.x}
                 y2={height}
-                stroke="#1e293b"
+                className="stroke-slate-800 dark:stroke-slate-100"
                 strokeWidth="1.5"
                 strokeDasharray="3,3"
               />
@@ -193,12 +192,12 @@ export default function ElevationProfile({
             y1={height - 2}
             x2={width - paddingX}
             y2={height - 2}
-            stroke="#cbd5e1"
+            className="stroke-slate-300 dark:stroke-slate-700"
             strokeWidth="1"
           />
         </svg>
 
-        <div className="flex justify-between text-[10px] text-slate-500 font-mono font-medium px-1.5 mt-1">
+        <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono font-medium px-1.5 mt-1">
           <span>0 {unitSystem} (Start)</span>
           <span>{displayDist(distanceKm / 2)}</span>
           <span>{displayDist(distanceKm)} (Finish)</span>

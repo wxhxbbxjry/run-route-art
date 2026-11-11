@@ -22,7 +22,6 @@ import {
   Plus,
   Minus,
   Compass,
-  ShieldAlert,
   Box,
   Flame,
   RotateCcw,
@@ -36,8 +35,11 @@ interface RouteMapProps {
   unitSystem?: UnitSystem;
   hasElevationOpen?: boolean;
   fitTrigger?: number;
+  userLocation?: LatLng | null;
   onTileChange: (tile: TileLayerId) => void;
   onMapClick: (latlng: LatLng) => void;
+  onUserLocationDetected?: (latlng: LatLng) => void;
+  onLocationError?: (message: string) => void;
   onWaypointDrag?: (index: number, latlng: LatLng) => void;
   onWaypointDelete?: (index: number) => void;
   onResetMap?: () => void;
@@ -198,8 +200,11 @@ export default function RouteMap({
   unitSystem = 'km',
   hasElevationOpen = false,
   fitTrigger = 0,
+  userLocation = null,
   onTileChange,
   onMapClick,
+  onUserLocationDetected,
+  onLocationError,
   onWaypointDrag,
   onWaypointDelete,
   onResetMap,
@@ -212,28 +217,29 @@ export default function RouteMap({
   const waypointMarkersRef = useRef<maplibregl.Marker[]>([]);
   const milepostMarkersRef = useRef<maplibregl.Marker[]>([]);
   const hoverMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const userLocationMarkerRef = useRef<maplibregl.Marker | null>(null);
   const activePopupRef = useRef<maplibregl.Popup | null>(null);
   const obvitnasHoverPopupRef = useRef<maplibregl.Popup | null>(null);
   const layerPickerContainerRef = useRef<HTMLDivElement>(null);
 
   const onMapClickRef = useRef(onMapClick);
+  const onUserLocationDetectedRef = useRef(onUserLocationDetected);
   const routeDataRef = useRef(routeData);
   const waypointsRef = useRef(waypoints);
   const routeModeRef = useRef(routeMode);
   const selectedTileRef = useRef(selectedTile);
   const hasElevationRef = useRef(hasElevationOpen);
   const showLayerPickerRef = useRef(false);
-  const showObvitnasRef = useRef(true);
-  const showHeatmapRef = useRef(true);
+  const showHeatmapRef = useRef(false);
   const is3DModeRef = useRef(false);
   const fallbackUsedRef = useRef<string | null>(null);
   const appliedTileRef = useRef<TileLayerId | null>(null);
   const styleReqSeqRef = useRef<number>(0);
   const previewRafRef = useRef<number | null>(null);
+  const lastFlyTargetRef = useRef<LatLng | null>(null);
 
   const [showLayerPicker, setShowLayerPicker] = useState(false);
-  const [showObvitnas, setShowObvitnas] = useState(true);
-  const [showHeatmap, setShowHeatmap] = useState(true);
+  const [showHeatmap, setShowHeatmap] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [zoomLevel, setZoomLevel] = useState<number>(14);
   const [isRotatedOrTilted, setIsRotatedOrTilted] = useState<boolean>(false);
@@ -242,6 +248,10 @@ export default function RouteMap({
   useEffect(() => {
     onMapClickRef.current = onMapClick;
   }, [onMapClick]);
+
+  useEffect(() => {
+    onUserLocationDetectedRef.current = onUserLocationDetected;
+  }, [onUserLocationDetected]);
 
   useEffect(() => {
     routeDataRef.current = routeData;
@@ -266,10 +276,6 @@ export default function RouteMap({
   useEffect(() => {
     showLayerPickerRef.current = showLayerPicker;
   }, [showLayerPicker]);
-
-  useEffect(() => {
-    showObvitnasRef.current = showObvitnas;
-  }, [showObvitnas]);
 
   useEffect(() => {
     showHeatmapRef.current = showHeatmap;
@@ -465,7 +471,7 @@ export default function RouteMap({
         source: 'obvitnas-zones',
         minzoom: 10.5,
         layout: {
-          visibility: showObvitnasRef.current ? 'visible' : 'none',
+          visibility: 'visible',
         },
         paint: {
           'fill-color': '#e11d48',
@@ -481,7 +487,7 @@ export default function RouteMap({
         source: 'obvitnas-zones',
         minzoom: 10.5,
         layout: {
-          visibility: showObvitnasRef.current ? 'visible' : 'none',
+          visibility: 'visible',
         },
         paint: {
           'line-color': '#e11d48',
@@ -633,7 +639,7 @@ export default function RouteMap({
       if (tileId === 'strava-outdoor') {
         loadStravaOutdoorStyle().then((styleSpec) => {
           if (mapRef.current === map && styleReqSeqRef.current === reqSeq) {
-            map.setStyle(styleSpec);
+            map.setStyle(styleSpec, { diff: false });
           }
         });
         return;
@@ -642,13 +648,13 @@ export default function RouteMap({
       if (tileId === 'strava-dark') {
         loadStravaDarkStyle().then((styleSpec) => {
           if (mapRef.current === map && styleReqSeqRef.current === reqSeq) {
-            map.setStyle(styleSpec);
+            map.setStyle(styleSpec, { diff: false });
           }
         });
         return;
       }
 
-      map.setStyle(buildRasterMapStyle(cfg));
+      map.setStyle(buildRasterMapStyle(cfg), { diff: false });
     },
     []
   );
@@ -660,7 +666,17 @@ export default function RouteMap({
     maplibregl.setWorkerUrl('/maplibre-gl-worker.js');
 
     const initialCenter: [number, number] =
-      waypoints.length > 0 ? [waypoints[0].lng, waypoints[0].lat] : DEFAULT_JAKARTA_CENTER;
+      waypoints.length > 0
+        ? [waypoints[0].lng, waypoints[0].lat]
+        : flyToLocation
+        ? [flyToLocation.lng, flyToLocation.lat]
+        : userLocation
+        ? [userLocation.lng, userLocation.lat]
+        : DEFAULT_JAKARTA_CENTER;
+
+    if (flyToLocation && waypoints.length === 0) {
+      lastFlyTargetRef.current = flyToLocation;
+    }
 
     const initialConfig = TILE_LAYERS[selectedTile] || TILE_LAYERS['strava-outdoor'];
     appliedTileRef.current = selectedTile;
@@ -777,9 +793,9 @@ export default function RouteMap({
         .setLngLat(e.lngLat)
         .setHTML(
           `<div class="text-xs leading-snug">
-            <span class="block text-[9px] text-rose-600 font-extrabold uppercase tracking-wider">Zona Steril Obvitnas</span>
-            <span class="font-bold text-slate-900">${props.name || ''}</span>
-            <span class="block text-[10px] text-slate-500 mt-0.5">${props.sectorName || ''}</span>
+            <span class="block text-[9px] text-rose-600 dark:text-rose-400 font-extrabold uppercase tracking-wider">Zona Steril Obvitnas</span>
+            <span class="font-bold text-slate-900 dark:text-slate-100">${props.name || ''}</span>
+            <span class="block text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">${props.sectorName || ''}</span>
           </div>`
         )
         .addTo(map);
@@ -806,6 +822,7 @@ export default function RouteMap({
       obvitnasHoverPopupRef.current?.remove();
       activePopupRef.current?.remove();
       hoverMarkerRef.current?.remove();
+      userLocationMarkerRef.current?.remove();
       map.off('style.load', handleStyleLoad);
       map.setMissingStyleImageResolver(null);
       map.remove();
@@ -828,15 +845,6 @@ export default function RouteMap({
     if (appliedTileRef.current === selectedTile) return;
     applyTileStyle(map, selectedTile);
   }, [selectedTile, applyTileStyle]);
-
-  // Toggle Obvitnas visual layer visibility
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
-    const vis = showObvitnas ? 'visible' : 'none';
-    if (map.getLayer('obvitnas-fill')) map.setLayoutProperty('obvitnas-fill', 'visibility', vis);
-    if (map.getLayer('obvitnas-outline')) map.setLayoutProperty('obvitnas-outline', 'visibility', vis);
-  }, [showObvitnas]);
 
   // Toggle Free Strava Popular Corridors Heatmap Overlay
   useEffect(() => {
@@ -1016,8 +1024,8 @@ export default function RouteMap({
             : `Waypoint #${idx + 1}`;
 
           popupDiv.innerHTML = `
-            <div class="text-[11px] font-bold text-slate-900 mb-0.5">${titleText}</div>
-            <div class="text-[10px] text-slate-500 mb-2">Geser titik ke jalan lain</div>
+            <div class="text-[11px] font-bold text-slate-900 dark:text-slate-100 mb-0.5">${titleText}</div>
+            <div class="text-[10px] text-slate-500 dark:text-slate-400 mb-2">Geser titik ke jalan lain</div>
             <button class="w-full px-2.5 py-1 bg-[#fc4c02] hover:bg-[#e34402] active:scale-95 text-white font-bold text-[10px] rounded-lg transition shadow-sm">
               Hapus Titik
             </button>
@@ -1075,6 +1083,35 @@ export default function RouteMap({
     }
   }, [hoverLocation]);
 
+  // Live User GPS Location Pulsing Blue Beacon
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (!userLocation) {
+      if (userLocationMarkerRef.current) {
+        userLocationMarkerRef.current.remove();
+        userLocationMarkerRef.current = null;
+      }
+      return;
+    }
+
+    if (userLocationMarkerRef.current) {
+      userLocationMarkerRef.current.setLngLat([userLocation.lng, userLocation.lat]);
+    } else {
+      const el = document.createElement('div');
+      el.className = 'gps-user-beacon relative flex items-center justify-center w-6 h-6 pointer-events-none';
+      el.title = 'Lokasi GPS Anda Saat Ini';
+      el.innerHTML = `
+        <div class="absolute inset-0 rounded-full bg-sky-500/35 animate-ping"></div>
+        <div class="w-3.5 h-3.5 rounded-full bg-sky-500 border-[2.5px] border-white shadow-[0_0_12px_rgba(14,165,233,0.85)]"></div>
+      `;
+      userLocationMarkerRef.current = new maplibregl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([userLocation.lng, userLocation.lat])
+        .addTo(map);
+    }
+  }, [userLocation]);
+
   // Fit Bounds into unobstructed map area
   const fitToRoute = useCallback(() => {
     const map = mapRef.current;
@@ -1110,18 +1147,31 @@ export default function RouteMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !flyToLocation) return;
-    map.flyTo({
-      center: [flyToLocation.lng, flyToLocation.lat],
-      zoom: 15,
-      padding: getViewportPadding(),
-      duration: 1000,
-      essential: true,
-    });
+    if (lastFlyTargetRef.current === flyToLocation) return;
+    lastFlyTargetRef.current = flyToLocation;
+
+    const cur = map.getCenter();
+    const delta = Math.hypot(cur.lat - flyToLocation.lat, cur.lng - flyToLocation.lng);
+    if (delta > 0.25) {
+      map.jumpTo({
+        center: [flyToLocation.lng, flyToLocation.lat],
+        zoom: 14.5,
+        padding: getViewportPadding(),
+      });
+    } else {
+      map.flyTo({
+        center: [flyToLocation.lng, flyToLocation.lat],
+        zoom: 15,
+        padding: getViewportPadding(),
+        duration: 900,
+        essential: true,
+      });
+    }
   }, [flyToLocation, getViewportPadding]);
 
   const handleLocateMe = useCallback(() => {
     if (!navigator.geolocation) {
-      alert('Geolokasi tidak didukung oleh browser Anda.');
+      onLocationError?.('Geolokasi tidak didukung oleh browser Anda.');
       return;
     }
 
@@ -1129,26 +1179,37 @@ export default function RouteMap({
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setIsLocating(false);
-        const { latitude, longitude } = pos.coords;
+        const detected = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         const map = mapRef.current;
         if (map) {
-          map.flyTo({
-            center: [longitude, latitude],
-            zoom: 15.5,
-            padding: getViewportPadding(),
-            duration: 1000,
-          });
+          const cur = map.getCenter();
+          const delta = Math.hypot(cur.lat - detected.lat, cur.lng - detected.lng);
+          if (delta > 0.25) {
+            map.jumpTo({
+              center: [detected.lng, detected.lat],
+              zoom: 15,
+              padding: getViewportPadding(),
+            });
+          } else {
+            map.flyTo({
+              center: [detected.lng, detected.lat],
+              zoom: 15.5,
+              padding: getViewportPadding(),
+              duration: 900,
+              essential: true,
+            });
+          }
         }
-        onMapClick({ lat: latitude, lng: longitude });
+        onUserLocationDetectedRef.current?.(detected);
       },
       (err) => {
         setIsLocating(false);
         console.warn('Geolocation error:', err);
-        alert('Gagal mengambil lokasi perangkat. Pastikan izin GPS aktif.');
+        onLocationError?.('Gagal mengambil lokasi perangkat. Pastikan izin GPS aktif.');
       },
       { enableHighAccuracy: true, timeout: 8000 }
     );
-  }, [onMapClick, getViewportPadding]);
+  }, [getViewportPadding, onLocationError]);
 
   const handleToggle3D = useCallback(() => {
     const map = mapRef.current;
@@ -1175,15 +1236,20 @@ export default function RouteMap({
   const handleResetMapSettings = useCallback(() => {
     const map = mapRef.current;
     const isSwitchingStyle = selectedTileRef.current !== 'strava-outdoor';
-    setShowHeatmap(true);
-    setShowObvitnas(true);
+    showHeatmapRef.current = false;
+    is3DModeRef.current = false;
+    setShowHeatmap(false);
     setIs3DMode(false);
     onTileChange('strava-outdoor');
     setShowLayerPicker(false);
 
     if (map) {
       const targetCenter: [number, number] =
-        waypoints.length > 0 ? [waypoints[0].lng, waypoints[0].lat] : DEFAULT_JAKARTA_CENTER;
+        waypoints.length > 0
+          ? [waypoints[0].lng, waypoints[0].lat]
+          : userLocation
+          ? [userLocation.lng, userLocation.lat]
+          : DEFAULT_JAKARTA_CENTER;
       if (isSwitchingStyle) {
         map.jumpTo({
           center: targetCenter,
@@ -1205,7 +1271,7 @@ export default function RouteMap({
     }
 
     onResetMap?.();
-  }, [onTileChange, waypoints, getViewportPadding, onResetMap]);
+  }, [onTileChange, waypoints, userLocation, getViewportPadding, onResetMap]);
 
   const activeLayerCfg = TILE_LAYERS[selectedTile] || TILE_LAYERS['strava-outdoor'];
 
@@ -1227,39 +1293,39 @@ export default function RouteMap({
         <div ref={layerPickerContainerRef} className="relative">
           <button
             onClick={() => setShowLayerPicker(!showLayerPicker)}
-            title="Pengaturan Peta, Heatmap & Tema Strava"
+            title="Pengaturan Peta & Layer"
             className={`w-10 h-10 md:w-11 md:h-11 rounded-xl strava-card flex items-center justify-center transition active:scale-95 relative ${
               showLayerPicker
-                ? 'text-[#fc4c02] border-[#fc4c02] bg-orange-50'
-                : 'text-slate-700 hover:text-[#fc4c02] hover:bg-white'
+                ? 'text-[#fc4c02] border-[#fc4c02] bg-orange-50 dark:bg-orange-950/60'
+                : 'text-slate-700 dark:text-slate-200 hover:text-[#fc4c02] hover:bg-white dark:hover:bg-slate-800'
             }`}
           >
             <Layers className="w-4 h-4 md:w-5 md:h-5" />
             {showHeatmap && (
               <span
                 title="Heatmap Lari Aktif"
-                className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#fc4c02] border-2 border-white shadow-sm"
+                className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#fc4c02] border-2 border-white dark:border-slate-900 shadow-sm"
               />
             )}
           </button>
 
           {showLayerPicker && (
-            <div className="absolute right-12 md:right-14 top-0 w-72 max-h-[calc(100vh-110px)] overflow-y-auto rounded-2xl strava-card p-2.5 shadow-2xl z-50 space-y-1.5 animate-in fade-in slide-in-from-right-3">
-              <div className="flex items-center justify-between px-1 pb-1.5 border-b border-slate-100">
+            <div className="absolute right-12 md:right-14 top-0 w-72 max-h-[calc(100vh-110px)] overflow-y-auto rounded-2xl strava-card p-2.5 shadow-2xl z-50 space-y-1.5 animate-in fade-in slide-in-from-right-3 text-slate-900 dark:text-slate-100">
+              <div className="flex items-center justify-between px-1 pb-1.5 border-b border-slate-100 dark:border-slate-800">
                 <div>
-                  <p className="text-[11px] uppercase font-extrabold tracking-wider text-slate-900">
-                    Pengaturan Peta Strava
+                  <p className="text-[11px] uppercase font-extrabold tracking-wider text-slate-900 dark:text-white">
+                    Pengaturan Peta
                   </p>
-                  <p className="text-[10px] text-slate-500">100% Free &bull; Tanpa API Key</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">100% Free &bull; Tanpa API Key</p>
                 </div>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-orange-50 text-[#fc4c02] border border-orange-200 font-bold">
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-orange-50 dark:bg-orange-950/60 text-[#fc4c02] border border-orange-200 dark:border-orange-500/40 font-bold">
                   z{Math.round(zoomLevel)}
                 </span>
               </div>
 
               {/* Basemap Grid Selector */}
               <div className="space-y-0.5">
-                <p className="text-[10px] font-bold text-slate-500 uppercase px-1">Tipe Peta</p>
+                <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase px-1">Tipe Peta</p>
                 {Object.values(TILE_LAYERS).map((layer) => {
                   const isActive = selectedTile === layer.id;
                   return (
@@ -1270,12 +1336,12 @@ export default function RouteMap({
                       }}
                       className={`w-full text-left px-2.5 py-1.5 rounded-xl flex items-start gap-2.5 transition ${
                         isActive
-                          ? 'bg-orange-50 text-[#c93b00] border border-orange-200'
-                          : 'text-slate-700 hover:bg-slate-50 border border-transparent'
+                          ? 'bg-orange-50 dark:bg-orange-950/50 text-[#c93b00] dark:text-orange-300 border border-orange-200 dark:border-orange-500/40'
+                          : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/80 border border-transparent'
                       }`}
                     >
                       <span
-                        className="w-3.5 h-3.5 rounded-full border border-black/15 shrink-0 mt-0.5 shadow-sm"
+                        className="w-3.5 h-3.5 rounded-full border border-black/15 dark:border-white/25 shrink-0 mt-0.5 shadow-sm"
                         style={{ backgroundColor: layer.swatch }}
                       />
                       <div className="flex-1 min-w-0">
@@ -1287,7 +1353,7 @@ export default function RouteMap({
                             <span className="w-2 h-2 rounded-full bg-[#fc4c02] shrink-0" />
                           )}
                         </div>
-                        <p className="text-[10px] text-slate-500 leading-tight mt-0.5">
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight mt-0.5">
                           {layer.description}
                         </p>
                       </div>
@@ -1297,13 +1363,13 @@ export default function RouteMap({
               </div>
 
               {/* Strava Layer Overlays */}
-              <div className="pt-1.5 border-t border-slate-100 space-y-1.5">
-                <p className="text-[10px] font-bold text-slate-500 uppercase px-1">Layer &amp; Sistem</p>
+              <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
+                <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase px-1">Layer &amp; Sistem</p>
 
-                {/* Free Popular Running Heatmap Toggle */}
+                {/* Free Popular Running Heatmap Toggle (Default OFF) */}
                 <button
                   onClick={() => setShowHeatmap((v) => !v)}
-                  className="w-full px-2.5 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 flex items-center justify-between gap-2 text-left transition"
+                  className="w-full px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700 flex items-center justify-between gap-2 text-left transition"
                 >
                   <div className="flex items-center gap-2">
                     <Flame
@@ -1312,46 +1378,17 @@ export default function RouteMap({
                       }`}
                     />
                     <div>
-                      <p className="text-[11px] font-bold text-slate-800 leading-tight">
+                      <p className="text-[11px] font-bold text-slate-800 dark:text-slate-100 leading-tight">
                         Heatmap Jalur Populer
                       </p>
-                      <p className="text-[9px] text-slate-500 leading-tight">
+                      <p className="text-[9px] text-slate-500 dark:text-slate-400 leading-tight">
                         Sorot jalur lari, taman &amp; trotoar (Free)
                       </p>
                     </div>
                   </div>
                   <span
                     className={`w-8 h-4 rounded-full p-0.5 transition flex items-center shrink-0 ${
-                      showHeatmap ? 'bg-[#fc4c02] justify-end' : 'bg-slate-300 justify-start'
-                    }`}
-                  >
-                    <span className="w-3 h-3 rounded-full bg-white shadow" />
-                  </span>
-                </button>
-
-                {/* Obvitnas Exclusion Buffer Overlay */}
-                <button
-                  onClick={() => setShowObvitnas((v) => !v)}
-                  className="w-full px-2.5 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 flex items-center justify-between gap-2 text-left transition"
-                >
-                  <div className="flex items-center gap-2">
-                    <ShieldAlert
-                      className={`w-4 h-4 shrink-0 ${
-                        showObvitnas ? 'text-rose-600' : 'text-slate-400'
-                      }`}
-                    />
-                    <div>
-                      <p className="text-[11px] font-bold text-slate-800 leading-tight">
-                        Zona Steril Obvitnas
-                      </p>
-                      <p className="text-[9px] text-slate-500 leading-tight">
-                        Pemblokiran objek vital tetap aktif
-                      </p>
-                    </div>
-                  </div>
-                  <span
-                    className={`w-8 h-4 rounded-full p-0.5 transition flex items-center shrink-0 ${
-                      showObvitnas ? 'bg-rose-600 justify-end' : 'bg-slate-300 justify-start'
+                      showHeatmap ? 'bg-[#fc4c02] justify-end' : 'bg-slate-300 dark:bg-slate-600 justify-start'
                     }`}
                   >
                     <span className="w-3 h-3 rounded-full bg-white shadow" />
@@ -1361,7 +1398,7 @@ export default function RouteMap({
                 {/* Reset All Map Settings Action */}
                 <button
                   onClick={handleResetMapSettings}
-                  className="w-full py-1.5 px-2.5 rounded-xl bg-white hover:bg-orange-50 text-slate-700 hover:text-[#fc4c02] border border-slate-200 hover:border-orange-200 text-[11px] font-bold flex items-center justify-center gap-1.5 transition"
+                  className="w-full py-1.5 px-2.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-orange-50 dark:hover:bg-orange-950/50 text-slate-700 dark:text-slate-200 hover:text-[#fc4c02] dark:hover:text-orange-300 border border-slate-200 dark:border-slate-700 hover:border-orange-200 dark:hover:border-orange-500/40 text-[11px] font-bold flex items-center justify-center gap-1.5 transition"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   <span>Reset Settingan Map</span>
@@ -1376,7 +1413,7 @@ export default function RouteMap({
           onClick={handleLocateMe}
           disabled={isLocating}
           title="Gunakan Lokasi GPS Saya"
-          className="w-10 h-10 md:w-11 md:h-11 rounded-xl strava-card flex items-center justify-center text-slate-700 hover:text-[#fc4c02] hover:bg-white transition active:scale-95"
+          className="w-10 h-10 md:w-11 md:h-11 rounded-xl strava-card flex items-center justify-center text-slate-700 dark:text-slate-200 hover:text-[#fc4c02] hover:bg-white dark:hover:bg-slate-800 transition active:scale-95"
         >
           <Crosshair
             className={`w-4 h-4 md:w-5 md:h-5 ${isLocating ? 'animate-spin text-[#fc4c02]' : ''}`}
@@ -1388,7 +1425,7 @@ export default function RouteMap({
           <button
             onClick={fitToRoute}
             title="Fokus ke Seluruh Rute"
-            className="w-10 h-10 md:w-11 md:h-11 rounded-xl strava-card flex items-center justify-center text-slate-700 hover:text-[#fc4c02] hover:bg-white transition active:scale-95"
+            className="w-10 h-10 md:w-11 md:h-11 rounded-xl strava-card flex items-center justify-center text-slate-700 dark:text-slate-200 hover:text-[#fc4c02] hover:bg-white dark:hover:bg-slate-800 transition active:scale-95"
           >
             <Maximize2 className="w-4 h-4 md:w-5 md:h-5" />
           </button>
@@ -1398,11 +1435,11 @@ export default function RouteMap({
         {activeLayerCfg.kind === 'vector' && (
           <button
             onClick={handleToggle3D}
-            title={is3DMode ? 'Kembali ke Peta 2D Strava' : 'Mode Peta 3D'}
+            title={is3DMode ? 'Kembali ke Peta 2D' : 'Mode Peta 3D'}
             className={`w-10 h-10 md:w-11 md:h-11 rounded-xl strava-card flex items-center justify-center transition active:scale-95 ${
               is3DMode
-                ? 'text-[#fc4c02] border-[#fc4c02] bg-orange-50'
-                : 'text-slate-700 hover:text-[#fc4c02] hover:bg-white'
+                ? 'text-[#fc4c02] border-[#fc4c02] bg-orange-50 dark:bg-orange-950/60'
+                : 'text-slate-700 dark:text-slate-200 hover:text-[#fc4c02] hover:bg-white dark:hover:bg-slate-800'
             }`}
           >
             <Box className="w-4 h-4 md:w-5 md:h-5" />
@@ -1414,7 +1451,7 @@ export default function RouteMap({
           <button
             onClick={handleResetNorth}
             title="Hadap Utara (Reset Kamera)"
-            className="w-10 h-10 md:w-11 md:h-11 rounded-xl strava-card flex items-center justify-center text-[#fc4c02] hover:bg-orange-50 transition active:scale-95"
+            className="w-10 h-10 md:w-11 md:h-11 rounded-xl strava-card flex items-center justify-center text-[#fc4c02] hover:bg-orange-50 dark:hover:bg-orange-950/60 transition active:scale-95"
           >
             <Compass className="w-4 h-4 md:w-5 md:h-5" />
           </button>
@@ -1425,20 +1462,20 @@ export default function RouteMap({
           <button
             onClick={() => mapRef.current?.zoomIn({ duration: 250 })}
             title="Perbesar Peta"
-            className="w-10 h-9 md:w-11 md:h-10 flex items-center justify-center text-slate-700 hover:text-[#fc4c02] hover:bg-slate-50 transition border-b border-slate-200/80"
+            className="w-10 h-9 md:w-11 md:h-10 flex items-center justify-center text-slate-700 dark:text-slate-200 hover:text-[#fc4c02] hover:bg-slate-50 dark:hover:bg-slate-800 transition border-b border-slate-200/80 dark:border-slate-700/80"
           >
             <Plus className="w-4 h-4 md:w-5 md:h-5" />
           </button>
           <div
             title="Level Zoom Aktif"
-            className="w-10 md:w-11 py-0.5 text-center text-[9px] font-mono font-extrabold text-[#fc4c02] bg-orange-50/70 border-b border-slate-200/80"
+            className="w-10 md:w-11 py-0.5 text-center text-[9px] font-mono font-extrabold text-[#fc4c02] bg-orange-50/70 dark:bg-orange-950/60 border-b border-slate-200/80 dark:border-slate-700/80"
           >
             z{Math.round(zoomLevel)}
           </div>
           <button
             onClick={() => mapRef.current?.zoomOut({ duration: 250 })}
             title="Perkecil Peta"
-            className="w-10 h-9 md:w-11 md:h-10 flex items-center justify-center text-slate-700 hover:text-[#fc4c02] hover:bg-slate-50 transition"
+            className="w-10 h-9 md:w-11 md:h-10 flex items-center justify-center text-slate-700 dark:text-slate-200 hover:text-[#fc4c02] hover:bg-slate-50 dark:hover:bg-slate-800 transition"
           >
             <Minus className="w-4 h-4 md:w-5 md:h-5" />
           </button>

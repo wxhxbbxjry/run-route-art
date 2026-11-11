@@ -6,7 +6,7 @@ export const HEATMAP_PLANET_SOURCE_URL = 'https://tiles.openfreemap.org/planet';
 export const TILE_LAYERS: Record<string, TileLayerOption> = {
   'strava-outdoor': {
     id: 'strava-outdoor',
-    name: 'Strava Standard',
+    name: 'Map Standar',
     description: 'Peta lari & outdoor terang tajam khas Strava (100% Free)',
     swatch: '#fc4c02',
     isDarkSurface: false,
@@ -17,7 +17,7 @@ export const TILE_LAYERS: Record<string, TileLayerOption> = {
   },
   'strava-satellite': {
     id: 'strava-satellite',
-    name: 'Satelit HD',
+    name: 'Map Satelit',
     description: 'Citra udara resolusi tinggi + nama jalan & batas wilayah',
     swatch: '#0ea5e9',
     isDarkSurface: true,
@@ -35,7 +35,7 @@ export const TILE_LAYERS: Record<string, TileLayerOption> = {
   },
   'strava-dark': {
     id: 'strava-dark',
-    name: 'Strava Night',
+    name: 'Map Night View',
     description: 'Mode peta malam kontras tinggi untuk lari malam & heatmap',
     swatch: '#1e293b',
     isDarkSurface: true,
@@ -46,7 +46,7 @@ export const TILE_LAYERS: Record<string, TileLayerOption> = {
   },
   'strava-trail': {
     id: 'strava-trail',
-    name: 'Trail & Track',
+    name: 'Map Trail & Track',
     description: 'Jalur pedestrian, taman kota, lintasan lari & kontur (CyclOSM)',
     swatch: '#16a34a',
     isDarkSurface: false,

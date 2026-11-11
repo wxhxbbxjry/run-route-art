@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import {
   LatLng,
@@ -40,38 +40,96 @@ const RouteMap = dynamic(() => import('@/components/Map/RouteMap'), {
   ),
 });
 
+const DEFAULT_CENTER: LatLng = {
+  lat: -6.2088,
+  lng: 106.822, // Sudirman - Semanggi - GBK runner corridor default
+};
+
+const THEME_STORAGE_KEY = 'runroute_theme_v1';
+
 export default function HomePage() {
-  // Navigation & Mode (Clean Strava Standard Map Defaults)
+  // Navigation & Theme Defaults
   const [currentMode, setCurrentMode] = useState<RouteMode>('manual');
   const [selectedTile, setSelectedTile] = useState<TileLayerId>('strava-outdoor');
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('km');
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [isLoadingRoute, setIsLoadingRoute] = useState<boolean>(false);
   const [hoverLocation, setHoverLocation] = useState<LatLng | null>(null);
   const [flyToLocation, setFlyToLocation] = useState<LatLng | null>(null);
+  const [userGpsLocation, setUserGpsLocation] = useState<LatLng | null>(null);
   const [fitTrigger, setFitTrigger] = useState<number>(0);
+
+  const hasManualLoopStartRef = useRef<boolean>(false);
+  const hasUserMapInteractionRef = useRef<boolean>(false);
+
+  // Sync persisted theme preference & root html dark class
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+      if (saved === 'dark' || saved === 'light') {
+        setTheme(saved);
+      }
+    } catch {
+      // Ignore storage access errors
+    }
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+  }, [theme]);
+
+  const handleToggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const next = prev === 'light' ? 'dark' : 'light';
+      try {
+        window.localStorage.setItem(THEME_STORAGE_KEY, next);
+      } catch {
+        // Ignore storage write errors
+      }
+      return next;
+    });
+  }, []);
 
   // Prefetch Strava Standard Outdoor vector style immediately while MapLibre JS chunk initializes
   useEffect(() => {
     void loadStravaOutdoorStyle();
   }, []);
 
-  // 1. ISOLATED STATE: Manual Tap Mode
+  // 1. ISOLATED STATE: Manual Tap Mode (Smart Road Snap, Contraflow & Alley/Private avoidance are always mandatory)
   const [manualWaypoints, setManualWaypoints] = useState<Waypoint[]>([]);
   const [manualRouteData, setManualRouteData] = useState<RouteData | null>(null);
-  const [manualSnapToRoads, setManualSnapToRoads] = useState<boolean>(true);
-  const [allowContraflow, setAllowContraflow] = useState<boolean>(true); // Default true: Runners can run against traffic
-  const [avoidSmallAlleys, setAvoidSmallAlleys] = useState<boolean>(true); // Default true: Avoid tiny alleys, steps, private compounds
   const [manualRedoStack, setManualRedoStack] = useState<Waypoint[][]>([]);
 
   // 2. ISOLATED STATE: Random Loop Generator Mode
-  const [loopStartLocation, setLoopStartLocation] = useState<LatLng | null>({
-    lat: -6.2088,
-    lng: 106.822, // Sudirman - Semanggi - GBK runner corridor default
-  });
+  const [loopStartLocation, setLoopStartLocation] = useState<LatLng | null>(DEFAULT_CENTER);
   const [targetDistanceKm, setTargetDistanceKm] = useState<number>(10);
   const [loopHeadingOffset, setLoopHeadingOffset] = useState<number>(45);
   const [loopWaypoints, setLoopWaypoints] = useState<Waypoint[]>([]);
   const [loopRouteData, setLoopRouteData] = useState<RouteData | null>(null);
+
+  // Auto-detect GPS position silently on app startup
+  useEffect(() => {
+    if (typeof window === 'undefined' || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const detected: LatLng = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        };
+        setUserGpsLocation(detected);
+        if (!hasManualLoopStartRef.current) {
+          setLoopStartLocation(detected);
+        }
+        if (!hasUserMapInteractionRef.current) {
+          setFlyToLocation(detected);
+        }
+      },
+      () => {
+        // Fall back silently to default center when GPS is blocked or unavailable
+      },
+      { enableHighAccuracy: true, timeout: 6000, maximumAge: 60000 }
+    );
+  }, []);
 
   // Stats & Pace HUD
   const [paceSeconds, setPaceSeconds] = useState<number>(360); // 6:00 / km
@@ -104,8 +162,10 @@ export default function HomePage() {
   // Handle Search Result from OSM Nominatim (OnTheGoMap search style)
   const handleSelectSearchResult = useCallback(
     (latlng: LatLng, name: string) => {
+      hasUserMapInteractionRef.current = true;
       setFlyToLocation(latlng);
       if (currentMode === 'random') {
+        hasManualLoopStartRef.current = true;
         setLoopStartLocation(latlng);
       }
       addToast('info', 'Lokasi Ditemukan', name.split(',')[0]);
@@ -129,6 +189,8 @@ export default function HomePage() {
   // Handle Map Clicks based on active mode
   const handleMapClick = useCallback(
     async (clickedLatLng: LatLng) => {
+      hasUserMapInteractionRef.current = true;
+
       // Check Objek Vital Nasional violation
       const obvCheck = checkObvitnasViolation(clickedLatLng);
       let effectiveLatLng = clickedLatLng;
@@ -155,24 +217,16 @@ export default function HomePage() {
 
         if (updatedWaypoints.length >= 2) {
           setIsLoadingRoute(true);
-          const result = await fetchSmartManualRoute(
-            updatedWaypoints,
-            manualSnapToRoads,
-            allowContraflow,
-            avoidSmallAlleys
-          );
+          const result = await fetchSmartManualRoute(updatedWaypoints, true, true, true);
           setIsLoadingRoute(false);
 
-          const built = buildRouteData(
-            updatedWaypoints,
-            result,
-            'manual'
-          );
+          const built = buildRouteData(updatedWaypoints, result, 'manual');
           setManualRouteData(built);
         } else {
           setManualRouteData(null);
         }
       } else if (currentMode === 'random') {
+        hasManualLoopStartRef.current = true;
         setLoopStartLocation(effectiveLatLng);
         addToast(
           'info',
@@ -181,12 +235,14 @@ export default function HomePage() {
         );
       }
     },
-    [currentMode, manualWaypoints, manualSnapToRoads, allowContraflow, avoidSmallAlleys, addToast]
+    [currentMode, manualWaypoints, addToast]
   );
 
   // Manual & Loop Mode: Drag Waypoint (Start, Finish, intermediate pins in all modes)
   const handleWaypointDrag = useCallback(
     async (index: number, newPos: LatLng) => {
+      hasUserMapInteractionRef.current = true;
+
       // Check Objek Vital Nasional violation
       const obvCheck = checkObvitnasViolation(newPos);
       let effectivePos = newPos;
@@ -227,16 +283,12 @@ export default function HomePage() {
 
         if (updated.length >= 2) {
           setIsLoadingRoute(true);
-          const result = await fetchSmartManualRoute(
-            updated,
-            manualSnapToRoads,
-            allowContraflow,
-            avoidSmallAlleys
-          );
+          const result = await fetchSmartManualRoute(updated, true, true, true);
           setIsLoadingRoute(false);
           setManualRouteData(buildRouteData(updated, result, 'manual'));
         }
       } else if (currentMode === 'random') {
+        hasManualLoopStartRef.current = true;
         // Dragging start pin in Random Loop mode: reposition start and regenerate loop
         setLoopStartLocation(effectivePos);
         addToast('info', 'Titik Start Dipindahkan', 'Menghitung rute loop baru di posisi baru...');
@@ -245,26 +297,19 @@ export default function HomePage() {
           effectivePos,
           targetDistanceKm,
           loopHeadingOffset,
-          allowContraflow,
-          avoidSmallAlleys
+          true,
+          true
         );
         setIsLoadingRoute(false);
-        const loopWps = [{ id: 'start-point', lat: effectivePos.lat, lng: effectivePos.lng, name: 'Start / Finish' }];
+        const loopWps = [
+          { id: 'start-point', lat: effectivePos.lat, lng: effectivePos.lng, name: 'Start / Finish' },
+        ];
         setLoopWaypoints(loopWps);
         setLoopRouteData(buildRouteData(loopWps, result, 'random', targetDistanceKm));
         setFitTrigger((n) => n + 1);
       }
     },
-    [
-      currentMode,
-      manualWaypoints,
-      manualSnapToRoads,
-      allowContraflow,
-      avoidSmallAlleys,
-      targetDistanceKm,
-      loopHeadingOffset,
-      addToast,
-    ]
+    [currentMode, manualWaypoints, targetDistanceKm, loopHeadingOffset, addToast]
   );
 
   // Manual Mode: Delete Single Waypoint (OnTheGoMap click/right-click delete)
@@ -277,12 +322,7 @@ export default function HomePage() {
 
       if (updated.length >= 2) {
         setIsLoadingRoute(true);
-        const result = await fetchSmartManualRoute(
-          updated,
-          manualSnapToRoads,
-          allowContraflow,
-          avoidSmallAlleys
-        );
+        const result = await fetchSmartManualRoute(updated, true, true, true);
         setIsLoadingRoute(false);
         setManualRouteData(buildRouteData(updated, result, 'manual'));
       } else {
@@ -290,71 +330,7 @@ export default function HomePage() {
       }
       addToast('info', 'Waypoint Dihapus', `Waypoint #${index + 1} berhasil dihapus.`);
     },
-    [currentMode, manualWaypoints, manualSnapToRoads, allowContraflow, avoidSmallAlleys, addToast]
-  );
-
-  // Manual Mode: Toggle Snap
-  const handleToggleManualSnap = useCallback(
-    async (newSnapState: boolean) => {
-      setManualSnapToRoads(newSnapState);
-      if (manualWaypoints.length >= 2) {
-        setIsLoadingRoute(true);
-        const result = await fetchSmartManualRoute(
-          manualWaypoints,
-          newSnapState,
-          allowContraflow,
-          avoidSmallAlleys
-        );
-        setIsLoadingRoute(false);
-        setManualRouteData(buildRouteData(manualWaypoints, result, 'manual'));
-      }
-    },
-    [manualWaypoints, allowContraflow, avoidSmallAlleys]
-  );
-
-  // Manual Mode: Toggle Contraflow (Lawan Arah)
-  const handleToggleContraflow = useCallback(
-    async (newContraflow: boolean) => {
-      setAllowContraflow(newContraflow);
-      if (manualWaypoints.length >= 2) {
-        setIsLoadingRoute(true);
-        const result = await fetchSmartManualRoute(
-          manualWaypoints,
-          manualSnapToRoads,
-          newContraflow,
-          avoidSmallAlleys
-        );
-        setIsLoadingRoute(false);
-        setManualRouteData(buildRouteData(manualWaypoints, result, 'manual'));
-      }
-    },
-    [manualWaypoints, manualSnapToRoads, avoidSmallAlleys]
-  );
-
-  // Toggle Avoid Small Alleys & Private Zones (Request 1)
-  const handleToggleAvoidAlleys = useCallback(
-    async (newAvoid: boolean) => {
-      setAvoidSmallAlleys(newAvoid);
-      if (currentMode === 'manual' && manualWaypoints.length >= 2) {
-        setIsLoadingRoute(true);
-        const result = await fetchSmartManualRoute(
-          manualWaypoints,
-          manualSnapToRoads,
-          allowContraflow,
-          newAvoid
-        );
-        setIsLoadingRoute(false);
-        setManualRouteData(buildRouteData(manualWaypoints, result, 'manual'));
-      }
-      addToast(
-        'info',
-        newAvoid ? 'Hindari Gang Sempit: Aktif' : 'Semua Jalur: Diizinkan',
-        newAvoid
-          ? 'Rute diprioritaskan di jalan utama dan ruas terbuka.'
-          : 'Rute boleh melewati gang kecil dan jalan setapak.'
-      );
-    },
-    [currentMode, manualWaypoints, manualSnapToRoads, allowContraflow, addToast]
+    [currentMode, manualWaypoints, addToast]
   );
 
   // Manual Mode: Undo
@@ -366,18 +342,13 @@ export default function HomePage() {
 
     if (updated.length >= 2) {
       setIsLoadingRoute(true);
-      const result = await fetchSmartManualRoute(
-        updated,
-        manualSnapToRoads,
-        allowContraflow,
-        avoidSmallAlleys
-      );
+      const result = await fetchSmartManualRoute(updated, true, true, true);
       setIsLoadingRoute(false);
       setManualRouteData(buildRouteData(updated, result, 'manual'));
     } else {
       setManualRouteData(null);
     }
-  }, [manualWaypoints, manualSnapToRoads, allowContraflow, avoidSmallAlleys]);
+  }, [manualWaypoints]);
 
   // Manual Mode: Redo
   const handleRedoManualWaypoint = useCallback(async () => {
@@ -388,18 +359,13 @@ export default function HomePage() {
 
     if (nextWaypoints.length >= 2) {
       setIsLoadingRoute(true);
-      const result = await fetchSmartManualRoute(
-        nextWaypoints,
-        manualSnapToRoads,
-        allowContraflow,
-        avoidSmallAlleys
-      );
+      const result = await fetchSmartManualRoute(nextWaypoints, true, true, true);
       setIsLoadingRoute(false);
       setManualRouteData(buildRouteData(nextWaypoints, result, 'manual'));
     } else {
       setManualRouteData(null);
     }
-  }, [manualRedoStack, manualSnapToRoads, allowContraflow, avoidSmallAlleys]);
+  }, [manualRedoStack]);
 
   // Manual Mode: Out & Back (OnTheGoMap signature feature - reverses and returns to start)
   const handleOutAndBack = useCallback(async () => {
@@ -420,16 +386,11 @@ export default function HomePage() {
     const combined = [...manualWaypoints, ...returnPoints];
     setManualWaypoints(combined);
     setIsLoadingRoute(true);
-    const result = await fetchSmartManualRoute(
-      combined,
-      manualSnapToRoads,
-      allowContraflow,
-      avoidSmallAlleys
-    );
+    const result = await fetchSmartManualRoute(combined, true, true, true);
     setIsLoadingRoute(false);
     setManualRouteData(buildRouteData(combined, result, 'manual'));
     addToast('success', 'Rute Bolak-Balik Terbentuk', 'Rute digandakan kembali ke titik asal (Out & Back)!');
-  }, [manualWaypoints, manualSnapToRoads, allowContraflow, avoidSmallAlleys, addToast]);
+  }, [manualWaypoints, addToast]);
 
   // Manual Mode: Clear
   const handleClearManualWaypoints = useCallback(() => {
@@ -458,16 +419,11 @@ export default function HomePage() {
 
     setManualWaypoints(closedWaypoints);
     setIsLoadingRoute(true);
-    const result = await fetchSmartManualRoute(
-      closedWaypoints,
-      manualSnapToRoads,
-      allowContraflow,
-      avoidSmallAlleys
-    );
+    const result = await fetchSmartManualRoute(closedWaypoints, true, true, true);
     setIsLoadingRoute(false);
     setManualRouteData(buildRouteData(closedWaypoints, result, 'manual'));
     addToast('success', 'Loop Berhasil Ditutup', 'Rute kembali ke titik awal!');
-  }, [manualWaypoints, manualSnapToRoads, allowContraflow, avoidSmallAlleys, addToast]);
+  }, [manualWaypoints, addToast]);
 
   // Manual Mode: Reverse Route
   const handleReverseManualRoute = useCallback(async () => {
@@ -476,16 +432,11 @@ export default function HomePage() {
     const reversed = [...manualWaypoints].reverse();
     setManualWaypoints(reversed);
     setIsLoadingRoute(true);
-    const result = await fetchSmartManualRoute(
-      reversed,
-      manualSnapToRoads,
-      allowContraflow,
-      avoidSmallAlleys
-    );
+    const result = await fetchSmartManualRoute(reversed, true, true, true);
     setIsLoadingRoute(false);
     setManualRouteData(buildRouteData(reversed, result, 'manual'));
     addToast('info', 'Arah Dibalik', 'Titik awal dan akhir rute telah ditukar.');
-  }, [manualWaypoints, manualSnapToRoads, allowContraflow, avoidSmallAlleys, addToast]);
+  }, [manualWaypoints, addToast]);
 
   // Random Loop: Generate Loop
   const handleGenerateLoop = useCallback(
@@ -504,8 +455,8 @@ export default function HomePage() {
         loopStartLocation,
         targetDistanceKm,
         heading,
-        allowContraflow,
-        avoidSmallAlleys
+        true,
+        true
       );
       setIsLoadingRoute(false);
 
@@ -538,7 +489,7 @@ export default function HomePage() {
         `Jarak: ${result.distanceKm.toFixed(2)} km (Akurasi ${accuracy}%). Start & Finish 100% bertemu!`
       );
     },
-    [loopStartLocation, targetDistanceKm, loopHeadingOffset, allowContraflow, avoidSmallAlleys, addToast]
+    [loopStartLocation, targetDistanceKm, loopHeadingOffset, addToast]
   );
 
   // Random Loop: Re-roll
@@ -548,9 +499,21 @@ export default function HomePage() {
     handleGenerateLoop(nextHeading);
   }, [loopHeadingOffset, handleGenerateLoop]);
 
+  // Random Loop: Reset Loop
+  const handleResetLoop = useCallback(() => {
+    setLoopWaypoints([]);
+    setLoopRouteData(null);
+    setTargetDistanceKm(10);
+    setLoopHeadingOffset(45);
+    hasManualLoopStartRef.current = false;
+    setLoopStartLocation(userGpsLocation || DEFAULT_CENTER);
+    addToast('info', 'Random Loop Direset', 'Rute loop dihapus dan jarak dikembalikan ke 10 KM.');
+  }, [userGpsLocation, addToast]);
+
   // Load Imported GPX or Saved Route
   const handleLoadRoute = useCallback(
     (loadedRoute: RouteData, name?: string) => {
+      hasUserMapInteractionRef.current = true;
       setCurrentMode('manual');
       setManualWaypoints(loadedRoute.waypoints);
       setManualRouteData(loadedRoute);
@@ -564,7 +527,7 @@ export default function HomePage() {
     [addToast]
   );
 
-  // Geolocation quick helper
+  // Geolocation quick helper (Random Loop panel button)
   const handleUseMyLocation = useCallback(() => {
     if (!navigator.geolocation) {
       addToast('warning', 'GPS Tidak Tersedia', 'Browser tidak mendukung geolokasi.');
@@ -574,9 +537,10 @@ export default function HomePage() {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const userLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        if (currentMode === 'random') {
-          setLoopStartLocation(userLoc);
-        }
+        hasUserMapInteractionRef.current = true;
+        hasManualLoopStartRef.current = true;
+        setUserGpsLocation(userLoc);
+        setLoopStartLocation(userLoc);
         setFlyToLocation(userLoc);
         addToast(
           'success',
@@ -589,18 +553,40 @@ export default function HomePage() {
       },
       { enableHighAccuracy: true, timeout: 8000 }
     );
-  }, [currentMode, addToast]);
+  }, [addToast]);
+
+  // GPS locate button callback from RouteMap right dock
+  const handleMapLocateDetected = useCallback(
+    (detected: LatLng) => {
+      hasUserMapInteractionRef.current = true;
+      setUserGpsLocation(detected);
+      if (currentMode === 'random') {
+        hasManualLoopStartRef.current = true;
+        setLoopStartLocation(detected);
+      }
+      addToast(
+        'success',
+        'Lokasi GPS Terdeteksi',
+        `Koordinat [${detected.lat.toFixed(4)}, ${detected.lng.toFixed(4)}]`
+      );
+    },
+    [currentMode, addToast]
+  );
 
   const handleResetMap = useCallback(() => {
     addToast(
       'info',
       'Settingan Map Direset',
-      'Kembali ke tampilan default Strava Standard, Heatmap Aktif & 2D.'
+      'Kembali ke Map Standar, 2D & Heatmap Nonaktif.'
     );
   }, [addToast]);
 
   return (
-    <main className="relative w-screen h-screen overflow-hidden flex bg-[#f4f3ef]">
+    <main
+      className={`relative w-screen h-screen overflow-hidden flex ${
+        theme === 'dark' ? 'dark bg-[#0f172a]' : 'bg-[#f4f3ef]'
+      }`}
+    >
       {/* Search Location Bar (Centered cleanly inside unobstructed map canvas) */}
       <div className="fixed top-3 inset-x-3 md:left-[350px] lg:left-[432px] md:right-20 md:flex md:justify-center z-20 pointer-events-none">
         <div className="w-full md:max-w-md pointer-events-auto">
@@ -618,8 +604,11 @@ export default function HomePage() {
           unitSystem={unitSystem}
           hasElevationOpen={showElevation}
           fitTrigger={fitTrigger}
+          userLocation={userGpsLocation}
           onTileChange={setSelectedTile}
           onMapClick={handleMapClick}
+          onUserLocationDetected={handleMapLocateDetected}
+          onLocationError={(msg) => addToast('warning', 'Gagal Mengambil GPS', msg)}
           onWaypointDrag={handleWaypointDrag}
           onWaypointDelete={handleWaypointDelete}
           onResetMap={handleResetMap}
@@ -634,11 +623,11 @@ export default function HomePage() {
         onModeChange={(m) => {
           setCurrentMode(m);
         }}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
         // Active mode route & waypoints
         waypoints={activeWaypoints}
         routeData={activeRouteData}
-        snapToRoads={manualSnapToRoads}
-        onToggleSnap={handleToggleManualSnap}
         onUndoWaypoint={handleUndoManualWaypoint}
         onRedoWaypoint={handleRedoManualWaypoint}
         canRedo={manualRedoStack.length > 0}
@@ -646,10 +635,6 @@ export default function HomePage() {
         onClearWaypoints={handleClearManualWaypoints}
         onCloseLoop={handleCloseManualLoop}
         onReverseRoute={handleReverseManualRoute}
-        allowContraflow={allowContraflow}
-        onToggleContraflow={handleToggleContraflow}
-        avoidSmallAlleys={avoidSmallAlleys}
-        onToggleAvoidAlleys={handleToggleAvoidAlleys}
         onOpenSavedRoutes={() => setIsSavedRoutesOpen(true)}
         unitSystem={unitSystem}
         onToggleUnit={() => setUnitSystem((u) => (u === 'km' ? 'mi' : 'km'))}
@@ -663,6 +648,7 @@ export default function HomePage() {
         onUseMyLocation={handleUseMyLocation}
         onGenerateLoop={() => handleGenerateLoop()}
         onReRollLoop={handleReRollLoop}
+        onResetLoop={handleResetLoop}
         isLoading={isLoadingRoute}
       />
 

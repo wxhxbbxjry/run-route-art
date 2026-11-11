@@ -12,6 +12,11 @@
   --strava-green: #16a34a;
 }
 
+.dark {
+  --background: #0f172a;
+  --foreground: #f1f5f9;
+}
+
 body {
   color: var(--foreground);
   background: var(--background);
@@ -28,9 +33,15 @@ body {
 ::-webkit-scrollbar-track {
   background: rgba(241, 245, 249, 0.7);
 }
+.dark ::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+}
 ::-webkit-scrollbar-thumb {
   background: rgba(148, 163, 184, 0.45);
   border-radius: 9999px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(71, 85, 105, 0.7);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(100, 116, 139, 0.7);
@@ -95,7 +106,7 @@ body {
   }
 }
 
-/* Clean Strava Athlete Frosted Styling for MapLibre Attribution */
+/* Clean Strava Athlete Styling for MapLibre Attribution */
 .maplibregl-ctrl-attrib {
   background: rgba(255, 255, 255, 0.92) !important;
   color: #334155 !important;
@@ -105,9 +116,20 @@ body {
   box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
 }
 
+.dark .maplibregl-ctrl-attrib {
+  background: rgba(15, 23, 42, 0.92) !important;
+  color: #cbd5e1 !important;
+  border: 1px solid rgba(51, 65, 85, 0.9) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
 .maplibregl-ctrl-attrib a {
   color: #fc4c02 !important;
   font-weight: 600;
+}
+
+.dark .maplibregl-ctrl-attrib-button {
+  filter: invert(0.9);
 }
 
 /* Clean Strava Scale Bar */
@@ -124,7 +146,13 @@ body {
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
 }
 
-/* Clean Strava Light Popups */
+.dark .maplibregl-ctrl-scale {
+  background: rgba(15, 23, 42, 0.92) !important;
+  color: #f1f5f9 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* Clean Strava Light & Dark Popups */
 .maplibregl-popup {
   z-index: 25;
 }
@@ -138,6 +166,13 @@ body {
   padding: 9px 12px !important;
 }
 
+.dark .maplibregl-popup-content {
+  background: rgba(15, 23, 42, 0.97) !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(51, 65, 85, 0.9) !important;
+  box-shadow: 0 12px 28px -6px rgba(0, 0, 0, 0.5) !important;
+}
+
 .maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
   border-top-color: rgba(255, 255, 255, 0.98) !important;
 }
@@ -149,6 +184,19 @@ body {
 }
 .maplibregl-popup-anchor-right .maplibregl-popup-tip {
   border-left-color: rgba(255, 255, 255, 0.98) !important;
+}
+
+.dark .maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+  border-top-color: rgba(15, 23, 42, 0.97) !important;
+}
+.dark .maplibregl-popup-anchor-top .maplibregl-popup-tip {
+  border-bottom-color: rgba(15, 23, 42, 0.97) !important;
+}
+.dark .maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: rgba(15, 23, 42, 0.97) !important;
+}
+.dark .maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: rgba(15, 23, 42, 0.97) !important;
 }
 
 /* Strava Signature Route Pins */
@@ -267,10 +315,16 @@ body {
   white-space: nowrap;
 }
 
-/* Clean Strava Panel Surfaces (no heavy blur-over-WebGL glitches) */
+/* Clean Strava Panel Surfaces (Light & Dark, no heavy blur-over-WebGL glitches) */
 .sidebar-panel {
   background: rgba(255, 255, 255, 0.97);
   border: 1px solid rgba(226, 232, 240, 0.95);
+  isolation: isolate;
+}
+
+.dark .sidebar-panel {
+  background: rgba(15, 23, 42, 0.97);
+  border: 1px solid rgba(51, 65, 85, 0.9);
   isolation: isolate;
 }
 
@@ -280,12 +334,28 @@ body {
   box-shadow: 0 8px 24px -4px rgba(15, 23, 42, 0.12);
 }
 
+.dark .strava-card {
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(51, 65, 85, 0.9);
+  box-shadow: 0 10px 28px -4px rgba(0, 0, 0, 0.45);
+}
+
 .glass-panel {
   background: rgba(255, 255, 255, 0.96);
   border: 1px solid rgba(226, 232, 240, 0.95);
 }
 
+.dark .glass-panel {
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(51, 65, 85, 0.9);
+}
+
 .glass-pill {
   background: rgba(255, 255, 255, 0.96);
   border: 1px solid rgba(226, 232, 240, 0.95);
+}
+
+.dark .glass-pill {
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(51, 65, 85, 0.9);
 }
