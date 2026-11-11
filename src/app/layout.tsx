@@ -4,7 +4,7 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'RunRoute PRO | Smart Running Route & Random Loop Planner',
   description:
-    'Rancang rute lari pintar, random 5K/10K closed loop, dan manual tap-to-route 100% gratis dengan OpenStreetMap & OSRM routing. Ekspor rute ke GPX (Strava/Garmin) dan GeoJSON.',
+    'Rancang rute lari pintar, random 5K/10K closed loop, dan manual tap-to-route 100% gratis di jalur aman kendaraan (mobil & motor) dengan OpenStreetMap & Valhalla routing. Ekspor rute ke GPX (Strava/Garmin) dan GeoJSON.',
   keywords: [
     'Run Route Generator',
     'Random Loop Runner',
@@ -39,6 +39,7 @@ export default function RootLayout({
       <head>
         <link rel="preconnect" href="https://tiles.openfreemap.org" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://tiles.openfreemap.org" />
+        <link rel="preconnect" href="https://valhalla1.openstreetmap.de" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://router.project-osrm.org" crossOrigin="anonymous" />
       </head>
       <body className="antialiased bg-[#f4f3ef] text-slate-900 overflow-hidden w-screen h-screen">

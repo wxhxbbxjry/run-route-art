@@ -16,6 +16,7 @@ import {
   fetchSmartManualRoute,
   generateAccurateLoop,
   buildRouteData,
+  snapWaypointToVehicleRoad,
 } from '@/lib/osrm';
 import { checkObvitnasViolation, pushOutOfObvitnas } from '@/lib/obvitnas';
 
@@ -99,6 +100,13 @@ export default function HomePage() {
   const [manualWaypoints, setManualWaypoints] = useState<Waypoint[]>([]);
   const [manualRouteData, setManualRouteData] = useState<RouteData | null>(null);
   const [manualRedoStack, setManualRedoStack] = useState<Waypoint[][]>([]);
+  const manualWaypointsRef = useRef<Waypoint[]>([]);
+  const manualRouteSeqRef = useRef<number>(0);
+
+  const commitManualWaypoints = useCallback((wps: Waypoint[]) => {
+    manualWaypointsRef.current = wps;
+    setManualWaypoints(wps);
+  }, []);
 
   // 2. ISOLATED STATE: Random Loop Generator Mode
   const [loopStartLocation, setLoopStartLocation] = useState<LatLng | null>(DEFAULT_CENTER);
@@ -186,6 +194,45 @@ export default function HomePage() {
     [activeRouteData]
   );
 
+  const recomputeManualRoute = useCallback(
+    async (nextWaypoints: Waypoint[]) => {
+      const seq = ++manualRouteSeqRef.current;
+
+      if (nextWaypoints.length === 0) {
+        setIsLoadingRoute(false);
+        setManualRouteData(null);
+        return;
+      }
+
+      if (nextWaypoints.length === 1) {
+        setManualRouteData(null);
+        const snapped = await snapWaypointToVehicleRoad(nextWaypoints[0]);
+        if (manualRouteSeqRef.current !== seq) return;
+        const aligned = [{ ...nextWaypoints[0], lat: snapped.lat, lng: snapped.lng }];
+        commitManualWaypoints(aligned);
+        return;
+      }
+
+      setIsLoadingRoute(true);
+      const result = await fetchSmartManualRoute(nextWaypoints, true, true, true);
+      if (manualRouteSeqRef.current !== seq) return;
+      setIsLoadingRoute(false);
+
+      const alignedWaypoints =
+        result.snappedWaypoints && result.snappedWaypoints.length === nextWaypoints.length
+          ? nextWaypoints.map((wp, idx) => ({
+              ...wp,
+              lat: result.snappedWaypoints![idx].lat,
+              lng: result.snappedWaypoints![idx].lng,
+            }))
+          : nextWaypoints;
+
+      commitManualWaypoints(alignedWaypoints);
+      setManualRouteData(buildRouteData(alignedWaypoints, result, 'manual'));
+    },
+    [commitManualWaypoints]
+  );
+
   // Handle Map Clicks based on active mode
   const handleMapClick = useCallback(
     async (clickedLatLng: LatLng) => {
@@ -204,27 +251,18 @@ export default function HomePage() {
       }
 
       if (currentMode === 'manual') {
+        const curWaypoints = manualWaypointsRef.current;
         setManualRedoStack([]); // Reset redo stack on new addition
         const newWaypoint: Waypoint = {
-          id: `wp-${Date.now()}-${manualWaypoints.length + 1}`,
+          id: `wp-${Date.now()}-${curWaypoints.length + 1}`,
           lat: effectiveLatLng.lat,
           lng: effectiveLatLng.lng,
-          name: `Point ${manualWaypoints.length + 1}`,
+          name: `Point ${curWaypoints.length + 1}`,
         };
 
-        const updatedWaypoints = [...manualWaypoints, newWaypoint];
-        setManualWaypoints(updatedWaypoints);
-
-        if (updatedWaypoints.length >= 2) {
-          setIsLoadingRoute(true);
-          const result = await fetchSmartManualRoute(updatedWaypoints, true, true, true);
-          setIsLoadingRoute(false);
-
-          const built = buildRouteData(updatedWaypoints, result, 'manual');
-          setManualRouteData(built);
-        } else {
-          setManualRouteData(null);
-        }
+        const updatedWaypoints = [...curWaypoints, newWaypoint];
+        commitManualWaypoints(updatedWaypoints);
+        await recomputeManualRoute(updatedWaypoints);
       } else if (currentMode === 'random') {
         hasManualLoopStartRef.current = true;
         setLoopStartLocation(effectiveLatLng);
@@ -235,7 +273,7 @@ export default function HomePage() {
         );
       }
     },
-    [currentMode, manualWaypoints, addToast]
+    [currentMode, commitManualWaypoints, recomputeManualRoute, addToast]
   );
 
   // Manual & Loop Mode: Drag Waypoint (Start, Finish, intermediate pins in all modes)
@@ -256,7 +294,8 @@ export default function HomePage() {
       }
 
       if (currentMode === 'manual') {
-        const updated = [...manualWaypoints];
+        const curWaypoints = manualWaypointsRef.current;
+        const updated = [...curWaypoints];
         const isClosed =
           updated.length > 2 &&
           Math.abs(updated[0].lat - updated[updated.length - 1].lat) < 0.0001 &&
@@ -278,15 +317,9 @@ export default function HomePage() {
           };
         }
 
-        setManualWaypoints(updated);
+        commitManualWaypoints(updated);
         setManualRedoStack([]);
-
-        if (updated.length >= 2) {
-          setIsLoadingRoute(true);
-          const result = await fetchSmartManualRoute(updated, true, true, true);
-          setIsLoadingRoute(false);
-          setManualRouteData(buildRouteData(updated, result, 'manual'));
-        }
+        await recomputeManualRoute(updated);
       } else if (currentMode === 'random') {
         hasManualLoopStartRef.current = true;
         // Dragging start pin in Random Loop mode: reposition start and regenerate loop
@@ -301,79 +334,59 @@ export default function HomePage() {
           true
         );
         setIsLoadingRoute(false);
+        const pinPos = result.effectiveStart || effectivePos;
         const loopWps = [
-          { id: 'start-point', lat: effectivePos.lat, lng: effectivePos.lng, name: 'Start / Finish' },
+          { id: 'start-point', lat: pinPos.lat, lng: pinPos.lng, name: 'Start / Finish' },
         ];
         setLoopWaypoints(loopWps);
         setLoopRouteData(buildRouteData(loopWps, result, 'random', targetDistanceKm));
         setFitTrigger((n) => n + 1);
       }
     },
-    [currentMode, manualWaypoints, targetDistanceKm, loopHeadingOffset, addToast]
+    [currentMode, targetDistanceKm, loopHeadingOffset, commitManualWaypoints, recomputeManualRoute, addToast]
   );
 
   // Manual Mode: Delete Single Waypoint (OnTheGoMap click/right-click delete)
   const handleWaypointDelete = useCallback(
     async (index: number) => {
       if (currentMode !== 'manual') return;
-      setManualRedoStack((prev) => [...prev, manualWaypoints]);
-      const updated = manualWaypoints.filter((_, idx) => idx !== index);
-      setManualWaypoints(updated);
-
-      if (updated.length >= 2) {
-        setIsLoadingRoute(true);
-        const result = await fetchSmartManualRoute(updated, true, true, true);
-        setIsLoadingRoute(false);
-        setManualRouteData(buildRouteData(updated, result, 'manual'));
-      } else {
-        setManualRouteData(null);
-      }
+      const curWaypoints = manualWaypointsRef.current;
+      setManualRedoStack((prev) => [...prev, curWaypoints]);
+      const updated = curWaypoints.filter((_, idx) => idx !== index);
+      commitManualWaypoints(updated);
       addToast('info', 'Waypoint Dihapus', `Waypoint #${index + 1} berhasil dihapus.`);
+      await recomputeManualRoute(updated);
     },
-    [currentMode, manualWaypoints, addToast]
+    [currentMode, commitManualWaypoints, recomputeManualRoute, addToast]
   );
 
   // Manual Mode: Undo
   const handleUndoManualWaypoint = useCallback(async () => {
-    if (manualWaypoints.length === 0) return;
-    setManualRedoStack((prev) => [...prev, manualWaypoints]);
-    const updated = manualWaypoints.slice(0, -1);
-    setManualWaypoints(updated);
-
-    if (updated.length >= 2) {
-      setIsLoadingRoute(true);
-      const result = await fetchSmartManualRoute(updated, true, true, true);
-      setIsLoadingRoute(false);
-      setManualRouteData(buildRouteData(updated, result, 'manual'));
-    } else {
-      setManualRouteData(null);
-    }
-  }, [manualWaypoints]);
+    const curWaypoints = manualWaypointsRef.current;
+    if (curWaypoints.length === 0) return;
+    setManualRedoStack((prev) => [...prev, curWaypoints]);
+    const updated = curWaypoints.slice(0, -1);
+    commitManualWaypoints(updated);
+    await recomputeManualRoute(updated);
+  }, [commitManualWaypoints, recomputeManualRoute]);
 
   // Manual Mode: Redo
   const handleRedoManualWaypoint = useCallback(async () => {
     if (manualRedoStack.length === 0) return;
     const nextWaypoints = manualRedoStack[manualRedoStack.length - 1];
     setManualRedoStack((prev) => prev.slice(0, -1));
-    setManualWaypoints(nextWaypoints);
-
-    if (nextWaypoints.length >= 2) {
-      setIsLoadingRoute(true);
-      const result = await fetchSmartManualRoute(nextWaypoints, true, true, true);
-      setIsLoadingRoute(false);
-      setManualRouteData(buildRouteData(nextWaypoints, result, 'manual'));
-    } else {
-      setManualRouteData(null);
-    }
-  }, [manualRedoStack]);
+    commitManualWaypoints(nextWaypoints);
+    await recomputeManualRoute(nextWaypoints);
+  }, [manualRedoStack, commitManualWaypoints, recomputeManualRoute]);
 
   // Manual Mode: Out & Back (OnTheGoMap signature feature - reverses and returns to start)
   const handleOutAndBack = useCallback(async () => {
-    if (manualWaypoints.length < 2) return;
-    setManualRedoStack((prev) => [...prev, manualWaypoints]);
+    const curWaypoints = manualWaypointsRef.current;
+    if (curWaypoints.length < 2) return;
+    setManualRedoStack((prev) => [...prev, curWaypoints]);
 
     // Reverse intermediate points back to start
-    const returnPoints = manualWaypoints
+    const returnPoints = curWaypoints
       .slice(0, -1)
       .reverse()
       .map((wp, idx) => ({
@@ -383,32 +396,33 @@ export default function HomePage() {
         name: `Return ${wp.name}`,
       }));
 
-    const combined = [...manualWaypoints, ...returnPoints];
-    setManualWaypoints(combined);
-    setIsLoadingRoute(true);
-    const result = await fetchSmartManualRoute(combined, true, true, true);
-    setIsLoadingRoute(false);
-    setManualRouteData(buildRouteData(combined, result, 'manual'));
+    const combined = [...curWaypoints, ...returnPoints];
+    commitManualWaypoints(combined);
+    await recomputeManualRoute(combined);
     addToast('success', 'Rute Bolak-Balik Terbentuk', 'Rute digandakan kembali ke titik asal (Out & Back)!');
-  }, [manualWaypoints, addToast]);
+  }, [commitManualWaypoints, recomputeManualRoute, addToast]);
 
   // Manual Mode: Clear
   const handleClearManualWaypoints = useCallback(() => {
-    if (manualWaypoints.length > 0) {
-      setManualRedoStack((prev) => [...prev, manualWaypoints]);
+    manualRouteSeqRef.current++;
+    setIsLoadingRoute(false);
+    const curWaypoints = manualWaypointsRef.current;
+    if (curWaypoints.length > 0) {
+      setManualRedoStack((prev) => [...prev, curWaypoints]);
     }
-    setManualWaypoints([]);
+    commitManualWaypoints([]);
     setManualRouteData(null);
     addToast('info', 'Rute Manual Direset', 'Semua titik waypoint telah dihapus.');
-  }, [manualWaypoints, addToast]);
+  }, [commitManualWaypoints, addToast]);
 
   // Manual Mode: Close Loop
   const handleCloseManualLoop = useCallback(async () => {
-    if (manualWaypoints.length < 2) return;
-    setManualRedoStack((prev) => [...prev, manualWaypoints]);
-    const startPoint = manualWaypoints[0];
+    const curWaypoints = manualWaypointsRef.current;
+    if (curWaypoints.length < 2) return;
+    setManualRedoStack((prev) => [...prev, curWaypoints]);
+    const startPoint = curWaypoints[0];
     const closedWaypoints = [
-      ...manualWaypoints,
+      ...curWaypoints,
       {
         id: `wp-${Date.now()}-finish`,
         lat: startPoint.lat,
@@ -417,26 +431,21 @@ export default function HomePage() {
       },
     ];
 
-    setManualWaypoints(closedWaypoints);
-    setIsLoadingRoute(true);
-    const result = await fetchSmartManualRoute(closedWaypoints, true, true, true);
-    setIsLoadingRoute(false);
-    setManualRouteData(buildRouteData(closedWaypoints, result, 'manual'));
+    commitManualWaypoints(closedWaypoints);
+    await recomputeManualRoute(closedWaypoints);
     addToast('success', 'Loop Berhasil Ditutup', 'Rute kembali ke titik awal!');
-  }, [manualWaypoints, addToast]);
+  }, [commitManualWaypoints, recomputeManualRoute, addToast]);
 
   // Manual Mode: Reverse Route
   const handleReverseManualRoute = useCallback(async () => {
-    if (manualWaypoints.length < 2) return;
-    setManualRedoStack((prev) => [...prev, manualWaypoints]);
-    const reversed = [...manualWaypoints].reverse();
-    setManualWaypoints(reversed);
-    setIsLoadingRoute(true);
-    const result = await fetchSmartManualRoute(reversed, true, true, true);
-    setIsLoadingRoute(false);
-    setManualRouteData(buildRouteData(reversed, result, 'manual'));
+    const curWaypoints = manualWaypointsRef.current;
+    if (curWaypoints.length < 2) return;
+    setManualRedoStack((prev) => [...prev, curWaypoints]);
+    const reversed = [...curWaypoints].reverse();
+    commitManualWaypoints(reversed);
+    await recomputeManualRoute(reversed);
     addToast('info', 'Arah Dibalik', 'Titik awal dan akhir rute telah ditukar.');
-  }, [manualWaypoints, addToast]);
+  }, [commitManualWaypoints, recomputeManualRoute, addToast]);
 
   // Random Loop: Generate Loop
   const handleGenerateLoop = useCallback(
@@ -461,14 +470,15 @@ export default function HomePage() {
       setIsLoadingRoute(false);
 
       if (result.error) {
-        addToast('warning', 'OSRM Fallback', result.error);
+        addToast('warning', 'Routing Fallback', result.error);
       }
 
+      const pinLoc = result.effectiveStart || loopStartLocation;
       const loopWps: Waypoint[] = [
         {
           id: 'start-point',
-          lat: loopStartLocation.lat,
-          lng: loopStartLocation.lng,
+          lat: pinLoc.lat,
+          lng: pinLoc.lng,
           name: 'Start / Finish',
         },
       ];
@@ -513,9 +523,11 @@ export default function HomePage() {
   // Load Imported GPX or Saved Route
   const handleLoadRoute = useCallback(
     (loadedRoute: RouteData, name?: string) => {
+      manualRouteSeqRef.current++;
+      setIsLoadingRoute(false);
       hasUserMapInteractionRef.current = true;
       setCurrentMode('manual');
-      setManualWaypoints(loadedRoute.waypoints);
+      commitManualWaypoints(loadedRoute.waypoints);
       setManualRouteData(loadedRoute);
       setFitTrigger((n) => n + 1);
       addToast(
@@ -524,7 +536,7 @@ export default function HomePage() {
         name ? `"${name}" ditampilkan di peta.` : 'Rute siap digunakan.'
       );
     },
-    [addToast]
+    [commitManualWaypoints, addToast]
   );
 
   // Geolocation quick helper (Random Loop panel button)

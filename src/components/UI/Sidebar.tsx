@@ -200,7 +200,7 @@ export default function Sidebar({
 
         {/* Footer info */}
         <div className="px-3 py-2.5 border-t border-slate-200/80 dark:border-slate-800 text-[10px] text-slate-500 dark:text-slate-400 text-center bg-slate-50 dark:bg-slate-900/90 font-medium">
-          OpenFreeMap Vector &bull; OSRM Foot Routing &bull; Zona Steril Aktif
+          OpenFreeMap Vector &bull; Jalur Mobil &amp; Motor &bull; Zona Steril Aktif
         </div>
       </aside>
 

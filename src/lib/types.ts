@@ -26,7 +26,7 @@ export interface RouteData {
   elevationLossM: number;
   elevationProfile: ElevationPoint[];
   isSnapped: boolean;
-  source: 'osrm' | 'direct';
+  source: 'valhalla' | 'osrm' | 'direct';
   mode: RouteMode;
   targetDistanceKm?: number;
 }

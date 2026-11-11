@@ -237,6 +237,7 @@ export default function RouteMap({
   const styleReqSeqRef = useRef<number>(0);
   const previewRafRef = useRef<number | null>(null);
   const lastFlyTargetRef = useRef<LatLng | null>(null);
+  const lastFitTriggerRef = useRef<number>(fitTrigger);
 
   const [showLayerPicker, setShowLayerPicker] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(false);
@@ -1139,7 +1140,8 @@ export default function RouteMap({
   }, [routeData, waypoints, getViewportPadding]);
 
   useEffect(() => {
-    if (fitTrigger > 0) {
+    if (fitTrigger > 0 && fitTrigger !== lastFitTriggerRef.current) {
+      lastFitTriggerRef.current = fitTrigger;
       fitToRoute();
     }
   }, [fitTrigger, fitToRoute]);
