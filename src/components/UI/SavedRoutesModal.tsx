@@ -156,9 +156,6 @@ export default function SavedRoutesModal({
         coordinates: parsed.coordinates,
         waypoints,
         distanceKm: parsed.totalDistanceKm,
-        elevationGainM: parsed.elevationGainM,
-        elevationLossM: parsed.elevationLossM,
-        elevationProfile: parsed.elevationProfile,
         isSnapped: true,
         source: 'direct',
         mode: 'manual',
@@ -340,10 +337,6 @@ export default function SavedRoutesModal({
                               : `${item.routeData.distanceKm.toFixed(2)} KM`}
                           </span>
                           <span>&bull;</span>
-                          <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
-                            +{item.routeData.elevationGainM}m
-                          </span>
-                          <span>&bull;</span>
                           <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400">
                             <Calendar className="w-2.5 h-2.5" />
                             {new Date(item.createdAt).toLocaleDateString('id-ID', {
@@ -446,7 +439,7 @@ export default function SavedRoutesModal({
                 </p>
                 <ul className="list-disc list-inside text-[11px] space-y-1 pl-1 text-slate-600 dark:text-slate-400">
                   <li>File GPX standar versi 1.0 dan 1.1</li>
-                  <li>Data elevasi dan jarak akan otomatis dihitung &amp; divisualisasikan</li>
+                  <li>Data jarak dan jalur koordinat akan otomatis dihitung &amp; ditampilkan di peta</li>
                   <li>Rute hasil impor dapat langsung diedit dengan Manual Tap atau diunduh ulang</li>
                 </ul>
               </div>

@@ -13,18 +13,10 @@ export type RouteMode = 'manual' | 'random';
 
 export type UnitSystem = 'km' | 'mi';
 
-export interface ElevationPoint {
-  distanceKm: number;
-  elevationM: number;
-}
-
 export interface RouteData {
   coordinates: LatLng[];
   waypoints: Waypoint[];
   distanceKm: number;
-  elevationGainM: number;
-  elevationLossM: number;
-  elevationProfile: ElevationPoint[];
   isSnapped: boolean;
   source: 'valhalla' | 'osrm' | 'direct';
   mode: RouteMode;

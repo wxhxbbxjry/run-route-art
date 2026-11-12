@@ -2,11 +2,10 @@
 
 import React, { useState } from 'react';
 import { RouteData, UnitSystem } from '@/lib/types';
-import { calculatePaceTime, calculateCalories, kmToMiles, metersToFeet } from '@/lib/geo';
+import { calculatePaceTime, calculateCalories, kmToMiles } from '@/lib/geo';
 import {
   Timer,
   Flame,
-  Mountain,
   Download,
   Activity,
   Sliders,
@@ -19,8 +18,6 @@ interface StatsHudProps {
   paceSeconds: number;
   onPaceChange: (seconds: number) => void;
   onOpenExport: () => void;
-  showElevation: boolean;
-  onToggleElevation: () => void;
   unitSystem?: UnitSystem;
   onToggleUnit?: () => void;
 }
@@ -30,8 +27,6 @@ export default function StatsHud({
   paceSeconds,
   onPaceChange,
   onOpenExport,
-  showElevation,
-  onToggleElevation,
   unitSystem = 'km',
   onToggleUnit,
 }: StatsHudProps) {
@@ -48,14 +43,10 @@ export default function StatsHud({
   const paceString = formatPaceValue(paceSeconds, unitSystem);
   const paceUnitLabel = isMiles ? '/MI' : '/KM';
 
-  // Compute elevation gain
-  const elevGain = routeData ? routeData.elevationGainM : 0;
-  const elevDisplay = isMiles ? `+${metersToFeet(elevGain)}ft` : `+${elevGain}m`;
-
   return (
     <div className="strava-card rounded-2xl p-3.5 space-y-2.5 text-slate-900 dark:text-slate-100">
       {/* Top Main Metrics Row */}
-      <div className="grid grid-cols-4 gap-1 items-center text-center">
+      <div className="grid grid-cols-3 gap-1 items-center text-center">
         {/* Distance + Unit Switcher */}
         <div className="group flex flex-col items-center py-1 px-0.5 rounded-xl hover:bg-slate-50/90 dark:hover:bg-slate-800/60 transition-colors duration-150">
           <div className="flex items-center gap-1">
@@ -102,17 +93,6 @@ export default function StatsHud({
           </span>
           <span className="text-lg font-black font-mono tracking-tight text-[#c93b00] dark:text-orange-400 mt-0.5 tabular-nums">
             ~{calories}
-          </span>
-        </div>
-
-        {/* Elev Gain */}
-        <div className="group flex flex-col items-center py-1 px-0.5 rounded-xl hover:bg-slate-50/90 dark:hover:bg-slate-800/60 transition-colors duration-150 border-l border-slate-200/70 dark:border-slate-800">
-          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
-            <Mountain className="w-3 h-3 text-emerald-600 dark:text-emerald-400 transition-transform duration-150 group-hover:scale-110" />{' '}
-            Elevasi
-          </span>
-          <span className="text-lg font-black font-mono tracking-tight text-emerald-700 dark:text-emerald-400 mt-0.5 tabular-nums">
-            {elevDisplay}
           </span>
         </div>
       </div>
@@ -165,27 +145,13 @@ export default function StatsHud({
         </div>
       </div>
 
-      {/* Bottom Actions: Elevation & Export */}
-      <div className="flex items-center gap-2 pt-0.5">
-        <button
-          type="button"
-          onClick={onToggleElevation}
-          aria-pressed={showElevation}
-          className={`group flex-1 py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border ui-btn-secondary ui-focus-ring ${
-            showElevation
-              ? 'bg-orange-50 dark:bg-orange-950/60 border-[#fc4c02] text-[#c93b00] dark:text-orange-300'
-              : 'bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
-          }`}
-        >
-          <Mountain className="w-3.5 h-3.5 transition-transform duration-150 group-hover:scale-110" />
-          <span>{showElevation ? 'Tutup Elevasi' : 'Lihat Elevasi'}</span>
-        </button>
-
+      {/* Bottom Action: Export */}
+      <div className="pt-0.5">
         <button
           type="button"
           onClick={onOpenExport}
           disabled={!routeData || routeData.coordinates.length < 2}
-          className="group flex-1 py-2.5 px-3 rounded-xl bg-[#fc4c02] hover:bg-[#e34402] text-white font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-45 disabled:pointer-events-none ui-btn-primary ui-focus-ring"
+          className="group w-full py-2.5 px-3 rounded-xl bg-[#fc4c02] hover:bg-[#e34402] text-white font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-45 disabled:pointer-events-none ui-btn-primary ui-focus-ring"
         >
           <Download className="w-3.5 h-3.5 transition-transform duration-150 group-hover:translate-y-0.5" />
           <span>Ekspor GPX / JSON</span>

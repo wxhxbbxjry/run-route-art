@@ -1,5 +1,5 @@
 import { LatLng, RouteData, Waypoint } from './types';
-import { haversineDistance, calculatePolylineDistance, generateRealisticElevation } from './geo';
+import { haversineDistance, calculatePolylineDistance } from './geo';
 import { pushOutOfObvitnas, routeHasObvitnasViolation } from './obvitnas';
 
 const VALHALLA_ROUTE_URL = 'https://valhalla1.openstreetmap.de/route';
@@ -1189,7 +1189,7 @@ export async function generateAccurateLoop(
 }
 
 /**
- * Builds complete RouteData including realistic elevation profiles.
+ * Builds complete RouteData from a routing result.
  */
 export function buildRouteData(
   waypoints: Waypoint[],
@@ -1197,18 +1197,10 @@ export function buildRouteData(
   mode: RouteData['mode'],
   targetDistanceKm?: number
 ): RouteData {
-  const { elevationGainM, elevationLossM, elevationProfile } = generateRealisticElevation(
-    routeResult.coordinates,
-    routeResult.distanceKm
-  );
-
   return {
     coordinates: routeResult.coordinates,
     waypoints,
     distanceKm: routeResult.distanceKm,
-    elevationGainM,
-    elevationLossM,
-    elevationProfile,
     isSnapped: routeResult.isSnapped,
     source: routeResult.source,
     mode,

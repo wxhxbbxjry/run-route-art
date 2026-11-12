@@ -114,7 +114,7 @@ export default function ExportModal({
         </div>
 
         {/* Summary Card */}
-        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 grid grid-cols-3 gap-2 text-center text-xs tabular-nums">
+        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 grid grid-cols-2 gap-2 text-center text-xs tabular-nums">
           <div>
             <span className="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold">Jarak</span>
             <p className="font-mono font-black text-[#fc4c02] text-sm mt-0.5">
@@ -125,12 +125,6 @@ export default function ExportModal({
             <span className="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold">Est. Waktu</span>
             <p className="font-mono font-bold text-slate-900 dark:text-white text-sm mt-0.5">
               {timeInfo.formatted}
-            </p>
-          </div>
-          <div className="border-l border-slate-200 dark:border-slate-700">
-            <span className="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold">Elevasi</span>
-            <p className="font-mono font-bold text-emerald-700 dark:text-emerald-400 text-sm mt-0.5">
-              +{routeData.elevationGainM}m
             </p>
           </div>
         </div>

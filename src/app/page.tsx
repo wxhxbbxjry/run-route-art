@@ -10,7 +10,6 @@ import {
   TileLayerId,
   UnitSystem,
 } from '@/lib/types';
-import { getCoordinateAtDistance } from '@/lib/geo';
 import { loadStravaOutdoorStyle } from '@/lib/layers';
 import {
   fetchSmartManualRoute,
@@ -22,7 +21,6 @@ import { checkObvitnasViolation, pushOutOfObvitnas } from '@/lib/obvitnas';
 
 import Sidebar from '@/components/UI/Sidebar';
 import StatsHud from '@/components/UI/StatsHud';
-import ElevationProfile from '@/components/UI/ElevationProfile';
 import ExportModal from '@/components/UI/ExportModal';
 import Toast, { ToastMessage } from '@/components/UI/Toast';
 import MobileTopHud from '@/components/UI/MobileTopHud';
@@ -55,7 +53,6 @@ export default function HomePage() {
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('km');
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [isLoadingRoute, setIsLoadingRoute] = useState<boolean>(false);
-  const [hoverLocation, setHoverLocation] = useState<LatLng | null>(null);
   const [flyToLocation, setFlyToLocation] = useState<LatLng | null>(null);
   const [userGpsLocation, setUserGpsLocation] = useState<LatLng | null>(null);
   const [fitTrigger, setFitTrigger] = useState<number>(0);
@@ -141,7 +138,6 @@ export default function HomePage() {
 
   // Stats & Pace HUD
   const [paceSeconds, setPaceSeconds] = useState<number>(360); // 6:00 / km
-  const [showElevation, setShowElevation] = useState<boolean>(false);
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
   const [isSavedRoutesOpen, setIsSavedRoutesOpen] = useState<boolean>(false);
 
@@ -166,19 +162,6 @@ export default function HomePage() {
   // Mode-isolated active states (Manual Tap & Random Loop)
   const activeWaypoints = currentMode === 'manual' ? manualWaypoints : loopWaypoints;
   const activeRouteData = currentMode === 'manual' ? manualRouteData : loopRouteData;
-
-  // Handle Elevation Scrubbing Hover (OnTheGoMap cursor tracking)
-  const handleHoverDistance = useCallback(
-    (distKm: number | null) => {
-      if (distKm === null || !activeRouteData || activeRouteData.coordinates.length < 2) {
-        setHoverLocation(null);
-        return;
-      }
-      const coord = getCoordinateAtDistance(activeRouteData.coordinates, distKm);
-      setHoverLocation(coord);
-    },
-    [activeRouteData]
-  );
 
   const recomputeManualRoute = useCallback(
     async (nextWaypoints: Waypoint[]) => {
@@ -601,7 +584,6 @@ export default function HomePage() {
           routeMode={currentMode}
           selectedTile={selectedTile}
           unitSystem={unitSystem}
-          hasElevationOpen={showElevation}
           fitTrigger={fitTrigger}
           userLocation={userGpsLocation}
           onTileChange={setSelectedTile}
@@ -611,7 +593,6 @@ export default function HomePage() {
           onWaypointDrag={handleWaypointDrag}
           onWaypointDelete={handleWaypointDelete}
           onResetMap={handleResetMap}
-          hoverLocation={hoverLocation}
           flyToLocation={flyToLocation}
         />
       </div>
@@ -637,8 +618,6 @@ export default function HomePage() {
         onOpenSavedRoutes={() => setIsSavedRoutesOpen(true)}
         unitSystem={unitSystem}
         onToggleUnit={() => setUnitSystem((u) => (u === 'km' ? 'mi' : 'km'))}
-        showElevation={showElevation}
-        onToggleElevation={() => setShowElevation((s) => !s)}
         onOpenExport={() => setIsExportOpen(true)}
         // Random loop props
         startLocation={loopStartLocation}
@@ -653,46 +632,17 @@ export default function HomePage() {
 
       {/* Floating Metrics HUD (Desktop) */}
       <div className="hidden md:block absolute right-4 bottom-4 md:bottom-6 z-30 md:max-w-[300px] lg:max-w-sm w-full space-y-3 pointer-events-none">
-        {showElevation && activeRouteData && (
-          <div className="pointer-events-auto ui-fade-slide-up">
-            <ElevationProfile
-              profile={activeRouteData.elevationProfile}
-              gainM={activeRouteData.elevationGainM}
-              lossM={activeRouteData.elevationLossM}
-              distanceKm={activeRouteData.distanceKm}
-              unitSystem={unitSystem}
-              onHoverDistance={handleHoverDistance}
-            />
-          </div>
-        )}
-
         <div className="pointer-events-auto">
           <StatsHud
             routeData={activeRouteData}
             paceSeconds={paceSeconds}
             onPaceChange={setPaceSeconds}
             onOpenExport={() => setIsExportOpen(true)}
-            showElevation={showElevation}
-            onToggleElevation={() => setShowElevation(!showElevation)}
             unitSystem={unitSystem}
             onToggleUnit={() => setUnitSystem((u) => (u === 'km' ? 'mi' : 'km'))}
           />
         </div>
       </div>
-
-      {/* Mobile Floating Elevation Profile (Compact, directly above docked mobile bar) */}
-      {showElevation && activeRouteData && (
-        <div className="md:hidden absolute inset-x-3 bottom-[78px] z-30 pointer-events-auto ui-fade-slide-up">
-          <ElevationProfile
-            profile={activeRouteData.elevationProfile}
-            gainM={activeRouteData.elevationGainM}
-            lossM={activeRouteData.elevationLossM}
-            distanceKm={activeRouteData.distanceKm}
-            unitSystem={unitSystem}
-            onHoverDistance={handleHoverDistance}
-          />
-        </div>
-      )}
 
       {/* Export GPX / GeoJSON Modal */}
       {activeRouteData && (

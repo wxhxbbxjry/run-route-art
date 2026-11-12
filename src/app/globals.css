@@ -103,16 +103,6 @@ body {
   }
 }
 
-@media (max-width: 767px) {
-  .maplibregl-ctrl-bottom-left {
-    transition: opacity 0.2s ease;
-  }
-  .elevation-open-mobile .maplibregl-ctrl-bottom-left {
-    opacity: 0;
-    pointer-events: none;
-  }
-}
-
 /* Clean Strava Athlete Styling for MapLibre Attribution */
 .maplibregl-ctrl-attrib {
   background: rgba(255, 255, 255, 0.92) !important;

@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { RouteData, UnitSystem } from '@/lib/types';
-import { calculatePaceTime, calculateCalories, metersToFeet } from '@/lib/geo';
-import { Timer, Flame, Mountain, Activity, ChevronDown } from 'lucide-react';
+import { calculatePaceTime, calculateCalories } from '@/lib/geo';
+import { Timer, Flame, Activity, ChevronDown } from 'lucide-react';
 import PaceControl, { formatPaceValue } from './PaceControl';
 
 interface MobileTopHudProps {
@@ -46,8 +46,6 @@ export default function MobileTopHud({
   const distanceKm = routeData ? routeData.distanceKm : 0;
   const timeInfo = calculatePaceTime(distanceKm, paceSeconds);
   const calories = calculateCalories(distanceKm, paceSeconds);
-  const elevGain = routeData ? routeData.elevationGainM : 0;
-  const elevDisplay = isMiles ? `+${metersToFeet(elevGain)}ft` : `+${elevGain}m`;
 
   const paceString = formatPaceValue(paceSeconds, unitSystem);
   const paceUnitLabel = isMiles ? '/MI' : '/KM';
@@ -73,16 +71,7 @@ export default function MobileTopHud({
           <div className="flex items-center gap-1 min-w-0" title="Estimasi Kalori">
             <Flame className="w-3.5 h-3.5 text-[#fc4c02] shrink-0" />
             <span className="font-mono font-bold text-[#c93b00] dark:text-orange-400">
-              ~{calories}
-            </span>
-          </div>
-
-          <span className="hidden min-[390px]:block h-3.5 w-px bg-slate-200 dark:bg-slate-700 shrink-0" />
-
-          <div className="flex items-center gap-1 min-w-0" title="Total Tanjakan">
-            <Mountain className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-            <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">
-              {elevDisplay}
+              ~{calories} kcal
             </span>
           </div>
         </div>

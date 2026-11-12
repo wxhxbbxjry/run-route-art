@@ -33,7 +33,6 @@ interface RouteMapProps {
   routeMode: RouteMode;
   selectedTile: TileLayerId;
   unitSystem?: UnitSystem;
-  hasElevationOpen?: boolean;
   fitTrigger?: number;
   userLocation?: LatLng | null;
   onTileChange: (tile: TileLayerId) => void;
@@ -43,7 +42,6 @@ interface RouteMapProps {
   onWaypointDrag?: (index: number, latlng: LatLng) => void;
   onWaypointDelete?: (index: number) => void;
   onResetMap?: () => void;
-  hoverLocation?: LatLng | null;
   flyToLocation?: LatLng | null;
 }
 
@@ -198,7 +196,6 @@ export default function RouteMap({
   routeMode,
   selectedTile,
   unitSystem = 'km',
-  hasElevationOpen = false,
   fitTrigger = 0,
   userLocation = null,
   onTileChange,
@@ -208,7 +205,6 @@ export default function RouteMap({
   onWaypointDrag,
   onWaypointDelete,
   onResetMap,
-  hoverLocation,
   flyToLocation,
 }: RouteMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -216,7 +212,6 @@ export default function RouteMap({
   const scaleControlRef = useRef<maplibregl.ScaleControl | null>(null);
   const waypointMarkersRef = useRef<maplibregl.Marker[]>([]);
   const milepostMarkersRef = useRef<maplibregl.Marker[]>([]);
-  const hoverMarkerRef = useRef<maplibregl.Marker | null>(null);
   const userLocationMarkerRef = useRef<maplibregl.Marker | null>(null);
   const activePopupRef = useRef<maplibregl.Popup | null>(null);
   const obvitnasHoverPopupRef = useRef<maplibregl.Popup | null>(null);
@@ -228,7 +223,6 @@ export default function RouteMap({
   const waypointsRef = useRef(waypoints);
   const routeModeRef = useRef(routeMode);
   const selectedTileRef = useRef(selectedTile);
-  const hasElevationRef = useRef(hasElevationOpen);
   const showLayerPickerRef = useRef(false);
   const showHeatmapRef = useRef(false);
   const is3DModeRef = useRef(false);
@@ -269,10 +263,6 @@ export default function RouteMap({
   useEffect(() => {
     selectedTileRef.current = selectedTile;
   }, [selectedTile]);
-
-  useEffect(() => {
-    hasElevationRef.current = hasElevationOpen;
-  }, [hasElevationOpen]);
 
   useEffect(() => {
     showLayerPickerRef.current = showLayerPicker;
@@ -318,7 +308,7 @@ export default function RouteMap({
     if (window.innerWidth >= 1024) {
       return {
         top: 24,
-        bottom: hasElevationRef.current ? 240 : 140,
+        bottom: 140,
         left: 436,
         right: 110,
       };
@@ -326,14 +316,14 @@ export default function RouteMap({
     if (window.innerWidth >= 768) {
       return {
         top: 24,
-        bottom: hasElevationRef.current ? 230 : 130,
+        bottom: 130,
         left: 350,
         right: 96,
       };
     }
     return {
       top: 72,
-      bottom: hasElevationRef.current ? 210 : 96,
+      bottom: 96,
       left: 16,
       right: 64,
     };
@@ -831,7 +821,6 @@ export default function RouteMap({
       resizeObserver.disconnect();
       obvitnasHoverPopupRef.current?.remove();
       activePopupRef.current?.remove();
-      hoverMarkerRef.current?.remove();
       userLocationMarkerRef.current?.remove();
       map.off('style.load', handleStyleLoad);
       map.setMissingStyleImageResolver(null);
@@ -840,13 +829,6 @@ export default function RouteMap({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Update padding when elevation drawer opens/closes
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    map.easeTo({ padding: getViewportPadding(), duration: 250 });
-  }, [hasElevationOpen, getViewportPadding]);
 
   // Switch basemap cleanly when selectedTile changes
   useEffect(() => {
@@ -1065,34 +1047,6 @@ export default function RouteMap({
     });
   }, [waypoints, routeData, routeMode, onWaypointDrag, onWaypointDelete]);
 
-  // Strava Orange Elevation Scrubbing Hover Beacon
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    if (!hoverLocation) {
-      if (hoverMarkerRef.current) {
-        hoverMarkerRef.current.remove();
-        hoverMarkerRef.current = null;
-      }
-      return;
-    }
-
-    if (hoverMarkerRef.current) {
-      hoverMarkerRef.current.setLngLat([hoverLocation.lng, hoverLocation.lat]);
-    } else {
-      const el = document.createElement('div');
-      el.className = 'relative flex items-center justify-center w-5 h-5 pointer-events-none';
-      el.innerHTML = `
-        <div class="absolute inset-0 rounded-full bg-[#fc4c02]/45 animate-ping"></div>
-        <div class="w-3.5 h-3.5 rounded-full bg-[#fc4c02] border-2 border-white shadow-[0_0_12px_rgba(252,76,2,0.9)]"></div>
-      `;
-      hoverMarkerRef.current = new maplibregl.Marker({ element: el, anchor: 'center' })
-        .setLngLat([hoverLocation.lng, hoverLocation.lat])
-        .addTo(map);
-    }
-  }, [hoverLocation]);
-
   // Live User GPS Location Pulsing Blue Beacon
   useEffect(() => {
     const map = mapRef.current;
@@ -1290,7 +1244,7 @@ export default function RouteMap({
     <div
       className={`relative w-full h-full overflow-hidden ${
         activeLayerCfg.isDarkSurface ? 'bg-[#0f172a]' : 'bg-[#f1f5f9]'
-      } ${hasElevationOpen ? 'elevation-open-mobile' : ''}`}
+      }`}
     >
       {/* MapLibre Strava Style Container */}
       <div

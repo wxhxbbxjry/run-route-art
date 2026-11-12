@@ -1,4 +1,4 @@
-import { LatLng, ElevationPoint } from './types';
+import { LatLng } from './types';
 
 const EARTH_RADIUS_KM = 6371;
 
@@ -134,62 +134,6 @@ export function generateLoopWaypoints(
 }
 
 /**
- * Generates a realistic simulated elevation profile for the route.
- * Employs multi-frequency harmonic synthesis based on coordinates to produce natural terrain hills.
- */
-export function generateRealisticElevation(
-  coordinates: LatLng[],
-  totalDistanceKm: number
-): {
-  elevationGainM: number;
-  elevationLossM: number;
-  elevationProfile: ElevationPoint[];
-} {
-  if (coordinates.length === 0) {
-    return { elevationGainM: 0, elevationLossM: 0, elevationProfile: [] };
-  }
-
-  const profile: ElevationPoint[] = [];
-  let cumulativeDist = 0;
-  let gain = 0;
-  let loss = 0;
-
-  // Base elevation seed from first coord
-  const baseElevation = 25 + Math.abs(Math.sin(coordinates[0].lat * 100) * 45);
-
-  let prevEle = baseElevation;
-  profile.push({ distanceKm: 0, elevationM: Math.round(prevEle) });
-
-  for (let i = 1; i < coordinates.length; i++) {
-    const segmentDist = haversineDistance(coordinates[i - 1], coordinates[i]);
-    cumulativeDist += segmentDist;
-
-    // Multi-frequency hill wave
-    const wave1 = Math.sin((cumulativeDist / (totalDistanceKm || 1)) * Math.PI * 4) * 12;
-    const wave2 = Math.cos(cumulativeDist * 2.5) * 6;
-    const wave3 = Math.sin(coordinates[i].lat * 500 + coordinates[i].lng * 500) * 4;
-
-    const currentEle = Math.max(5, Math.round(baseElevation + wave1 + wave2 + wave3));
-
-    const diff = currentEle - prevEle;
-    if (diff > 0) gain += diff;
-    else loss += Math.abs(diff);
-
-    prevEle = currentEle;
-    profile.push({
-      distanceKm: Number(cumulativeDist.toFixed(2)),
-      elevationM: currentEle,
-    });
-  }
-
-  return {
-    elevationGainM: Math.round(gain),
-    elevationLossM: Math.round(loss),
-    elevationProfile: profile,
-  };
-}
-
-/**
  * Calculates estimated running time given distance and pace (seconds per km).
  */
 export function calculatePaceTime(
@@ -231,43 +175,6 @@ export function calculateCalories(
  */
 export function kmToMiles(km: number): number {
   return km * 0.621371;
-}
-
-/**
- * Converts meters to feet.
- */
-export function metersToFeet(meters: number): number {
-  return Math.round(meters * 3.28084);
-}
-
-/**
- * Finds the geographic coordinate along a route polyline at a given distance in kilometers.
- * Used for elevation chart mouse hover scrubbing (like OnTheGoMap).
- */
-export function getCoordinateAtDistance(
-  coordinates: LatLng[],
-  targetDistanceKm: number
-): LatLng | null {
-  if (!coordinates || coordinates.length === 0) return null;
-  if (targetDistanceKm <= 0 || coordinates.length === 1) return coordinates[0];
-
-  let accumulatedDist = 0;
-
-  for (let i = 0; i < coordinates.length - 1; i++) {
-    const segDist = haversineDistance(coordinates[i], coordinates[i + 1]);
-    if (accumulatedDist + segDist >= targetDistanceKm) {
-      const remaining = targetDistanceKm - accumulatedDist;
-      const ratio = segDist > 0 ? remaining / segDist : 0;
-
-      return {
-        lat: coordinates[i].lat + (coordinates[i + 1].lat - coordinates[i].lat) * ratio,
-        lng: coordinates[i].lng + (coordinates[i + 1].lng - coordinates[i].lng) * ratio,
-      };
-    }
-    accumulatedDist += segDist;
-  }
-
-  return coordinates[coordinates.length - 1];
 }
 
 /**

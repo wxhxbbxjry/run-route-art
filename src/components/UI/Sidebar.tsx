@@ -11,7 +11,6 @@ import {
   Route,
   FolderOpen,
   Undo2,
-  Mountain,
   Download,
   Moon,
   Sun,
@@ -35,8 +34,6 @@ interface SidebarProps {
   onOpenSavedRoutes?: () => void;
   unitSystem?: 'km' | 'mi';
   onToggleUnit?: () => void;
-  showElevation?: boolean;
-  onToggleElevation?: () => void;
   onOpenExport?: () => void;
   // Random Loop props
   startLocation: LatLng | null;
@@ -67,8 +64,6 @@ export default function Sidebar({
   onOpenSavedRoutes,
   unitSystem = 'km',
   onToggleUnit,
-  showElevation = false,
-  onToggleElevation,
   onOpenExport,
   startLocation,
   targetDistanceKm,
@@ -708,21 +703,6 @@ export default function Sidebar({
                   className="w-7 h-7 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center disabled:opacity-40 disabled:pointer-events-none ui-btn-secondary ui-focus-ring"
                 >
                   <Undo2 className="w-3.5 h-3.5" />
-                </button>
-              )}
-
-              {routeData && routeData.coordinates.length >= 2 && onToggleElevation && (
-                <button
-                  type="button"
-                  onClick={onToggleElevation}
-                  title="Lihat Grafik Elevasi"
-                  className={`w-7 h-7 rounded-xl flex items-center justify-center border ui-btn-secondary ui-focus-ring ${
-                    showElevation
-                      ? 'bg-orange-50 dark:bg-orange-950/60 border-[#fc4c02] text-[#fc4c02]'
-                      : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
-                  }`}
-                >
-                  <Mountain className="w-3.5 h-3.5" />
                 </button>
               )}
 
