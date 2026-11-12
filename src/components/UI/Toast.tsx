@@ -22,7 +22,7 @@ export default function Toast({ toasts, onDismiss }: ToastProps) {
     <div
       role="status"
       aria-live="polite"
-      className="fixed top-16 right-3 md:top-20 md:right-[72px] z-50 flex flex-col gap-2 max-w-xs w-[calc(100%-1.5rem)] md:w-80 pointer-events-none"
+      className="fixed top-[70px] right-[60px] md:top-4 md:right-[72px] z-50 flex flex-col gap-2 max-w-xs w-[calc(100%-4.5rem)] md:w-80 pointer-events-none"
     >
       {toasts.map((toast) => {
         const accentStripe =

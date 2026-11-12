@@ -25,7 +25,7 @@ import StatsHud from '@/components/UI/StatsHud';
 import ElevationProfile from '@/components/UI/ElevationProfile';
 import ExportModal from '@/components/UI/ExportModal';
 import Toast, { ToastMessage } from '@/components/UI/Toast';
-import SearchBar from '@/components/UI/SearchBar';
+import MobileTopHud from '@/components/UI/MobileTopHud';
 import SavedRoutesModal from '@/components/UI/SavedRoutesModal';
 
 // Dynamically import Vector/Raster Map with SSR disabled
@@ -166,20 +166,6 @@ export default function HomePage() {
   // Mode-isolated active states (Manual Tap & Random Loop)
   const activeWaypoints = currentMode === 'manual' ? manualWaypoints : loopWaypoints;
   const activeRouteData = currentMode === 'manual' ? manualRouteData : loopRouteData;
-
-  // Handle Search Result from OSM Nominatim (OnTheGoMap search style)
-  const handleSelectSearchResult = useCallback(
-    (latlng: LatLng, name: string) => {
-      hasUserMapInteractionRef.current = true;
-      setFlyToLocation(latlng);
-      if (currentMode === 'random') {
-        hasManualLoopStartRef.current = true;
-        setLoopStartLocation(latlng);
-      }
-      addToast('info', 'Lokasi Ditemukan', name.split(',')[0]);
-    },
-    [currentMode, addToast]
-  );
 
   // Handle Elevation Scrubbing Hover (OnTheGoMap cursor tracking)
   const handleHoverDistance = useCallback(
@@ -599,12 +585,13 @@ export default function HomePage() {
         theme === 'dark' ? 'dark bg-[#0f172a]' : 'bg-[#f1f5f9]'
       }`}
     >
-      {/* Search Location Bar (Centered cleanly inside unobstructed map canvas) */}
-      <div className="fixed top-3 inset-x-3 md:left-[350px] lg:left-[432px] md:right-20 md:flex md:justify-center z-20 pointer-events-none">
-        <div className="w-full md:max-w-md pointer-events-auto">
-          <SearchBar onSelectLocation={handleSelectSearchResult} />
-        </div>
-      </div>
+      {/* Mobile Quick Telemetry & Pace Control Bar */}
+      <MobileTopHud
+        routeData={activeRouteData}
+        paceSeconds={paceSeconds}
+        onPaceChange={setPaceSeconds}
+        unitSystem={unitSystem}
+      />
 
       {/* Interactive Fullscreen Strava-Style Map */}
       <div className="absolute inset-0">

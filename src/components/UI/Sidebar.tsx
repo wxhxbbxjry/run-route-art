@@ -233,7 +233,7 @@ export default function Sidebar({
         <div
           aria-hidden="true"
           onClick={() => setIsMobileExpanded(false)}
-          className="md:hidden fixed inset-0 bg-slate-950/35 z-30 transition-opacity duration-200"
+          className="md:hidden fixed inset-0 bg-slate-950/35 z-[35] transition-opacity duration-200"
         />
       )}
 

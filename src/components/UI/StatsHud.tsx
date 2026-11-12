@@ -12,6 +12,7 @@ import {
   Sliders,
   ChevronDown,
 } from 'lucide-react';
+import PaceControl, { formatPaceValue } from './PaceControl';
 
 interface StatsHudProps {
   routeData: RouteData | null;
@@ -23,14 +24,6 @@ interface StatsHudProps {
   unitSystem?: UnitSystem;
   onToggleUnit?: () => void;
 }
-
-const PACE_PRESETS = [
-  { label: 'Jalan Santai', pace: 600, text: '10:00' },
-  { label: 'Jogging Santai', pace: 420, text: '7:00' },
-  { label: 'Pace Sedang', pace: 360, text: '6:00' },
-  { label: 'Tempo Run', pace: 300, text: '5:00' },
-  { label: 'Speed PB', pace: 255, text: '4:15' },
-];
 
 export default function StatsHud({
   routeData,
@@ -52,18 +45,12 @@ export default function StatsHud({
   const timeInfo = calculatePaceTime(distanceKm, paceSeconds);
   const calories = calculateCalories(distanceKm, paceSeconds);
 
-  // Compute pace according to unit
-  const activePaceSeconds = isMiles ? Math.round(paceSeconds * 1.60934) : paceSeconds;
-  const paceMinutes = Math.floor(activePaceSeconds / 60);
-  const paceRemSeconds = activePaceSeconds % 60;
-  const paceString = `${paceMinutes}:${paceRemSeconds.toString().padStart(2, '0')}`;
+  const paceString = formatPaceValue(paceSeconds, unitSystem);
   const paceUnitLabel = isMiles ? '/MI' : '/KM';
 
   // Compute elevation gain
   const elevGain = routeData ? routeData.elevationGainM : 0;
   const elevDisplay = isMiles ? `+${metersToFeet(elevGain)}ft` : `+${elevGain}m`;
-
-  const paceSliderProgress = Math.max(0, Math.min(100, ((paceSeconds - 210) / (660 - 210)) * 100));
 
   return (
     <div className="strava-card rounded-2xl p-3.5 space-y-2.5 text-slate-900 dark:text-slate-100">
@@ -149,7 +136,7 @@ export default function StatsHud({
           className="group text-slate-700 dark:text-slate-200 hover:text-[#fc4c02] dark:hover:text-orange-300 flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg hover:bg-white dark:hover:bg-slate-700/70 transition-colors shrink-0 ui-focus-ring active:scale-95"
         >
           <Sliders className="w-3 h-3 transition-transform duration-150 group-hover:scale-110" />
-          <span>Atur Pace</span>
+          <span>{showPacePicker ? 'Tutup' : 'Atur Pace'}</span>
           <ChevronDown
             className={`w-3.5 h-3.5 transition-transform duration-200 ${
               showPacePicker ? 'rotate-180 text-[#fc4c02]' : 'rotate-0'
@@ -167,49 +154,13 @@ export default function StatsHud({
         }`}
       >
         <div className="overflow-hidden">
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-2.5">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-600 dark:text-slate-300 font-medium">
-                Geser Pace (Detik/KM):
-              </span>
-              <span className="font-mono text-[#c93b00] dark:text-orange-300 font-bold tabular-nums">
-                {paceString} min/km
-              </span>
-            </div>
-
-            <input
-              type="range"
-              min="210"
-              max="660"
-              step="5"
-              value={paceSeconds}
-              aria-label="Target Pace Lari dalam detik per kilometer"
-              tabIndex={showPacePicker ? 0 : -1}
-              onChange={(e) => onPaceChange(parseInt(e.target.value, 10))}
-              style={{ '--slider-progress': `${paceSliderProgress}%` } as React.CSSProperties}
-              className="strava-slider"
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+            <PaceControl
+              paceSeconds={paceSeconds}
+              onPaceChange={onPaceChange}
+              unitSystem={unitSystem}
+              isInteractive={showPacePicker}
             />
-
-            <div className="flex flex-wrap gap-1.5 pt-0.5">
-              {PACE_PRESETS.map((preset) => {
-                const isActive = paceSeconds === preset.pace;
-                return (
-                  <button
-                    type="button"
-                    key={preset.label}
-                    tabIndex={showPacePicker ? 0 : -1}
-                    onClick={() => onPaceChange(preset.pace)}
-                    className={`px-2 py-1 rounded-lg text-[10px] font-semibold border tabular-nums ui-card-hover ui-focus-ring ${
-                      isActive
-                        ? 'bg-orange-50 dark:bg-orange-950/60 text-[#c93b00] dark:text-orange-300 border-[#fc4c02]'
-                        : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-orange-300 dark:hover:border-orange-500/40 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    {preset.text} ({preset.label})
-                  </button>
-                );
-              })}
-            </div>
           </div>
         </div>
       </div>

@@ -310,14 +310,14 @@ export default function RouteMap({
     };
   }, [showLayerPicker]);
 
-  // Responsive viewport padding outside Sidebar, SearchBar, Right Dock & Bottom HUDs
+  // Responsive viewport padding outside Sidebar, MobileTopHud, Right Dock & Bottom HUDs
   const getViewportPadding = useCallback((): PaddingOptions => {
     if (typeof window === 'undefined') {
-      return { top: 76, bottom: 130, left: 436, right: 96 };
+      return { top: 24, bottom: 130, left: 436, right: 96 };
     }
     if (window.innerWidth >= 1024) {
       return {
-        top: 76,
+        top: 24,
         bottom: hasElevationRef.current ? 240 : 140,
         left: 436,
         right: 110,
@@ -325,7 +325,7 @@ export default function RouteMap({
     }
     if (window.innerWidth >= 768) {
       return {
-        top: 76,
+        top: 24,
         bottom: hasElevationRef.current ? 230 : 130,
         left: 350,
         right: 96,
@@ -1299,7 +1299,7 @@ export default function RouteMap({
       />
 
       {/* Right Floating Strava Map Controls Dock */}
-      <div className="absolute right-3 md:right-4 top-[68px] md:top-20 flex flex-col gap-2 z-40">
+      <div className="absolute right-3 md:right-4 top-[70px] md:top-4 flex flex-col gap-2 z-20 md:z-40">
         {/* Map Settings, Basemap Switcher & Heatmap Toggle */}
         <div ref={layerPickerContainerRef} className="relative">
           <button
@@ -1324,7 +1324,7 @@ export default function RouteMap({
           </button>
 
           {showLayerPicker && (
-            <div className="absolute right-12 md:right-14 top-0 w-72 max-h-[calc(100vh-110px)] overflow-y-auto rounded-2xl strava-card p-2.5 shadow-2xl z-50 space-y-2 ui-popover-right-enter text-slate-900 dark:text-slate-100">
+            <div className="absolute right-12 md:right-14 top-0 w-72 max-h-[calc(100vh-156px)] md:max-h-[calc(100vh-110px)] overflow-y-auto rounded-2xl strava-card p-2.5 shadow-2xl z-50 space-y-2 ui-popover-right-enter text-slate-900 dark:text-slate-100">
               <div className="flex items-center justify-between px-1 pb-1.5 border-b border-slate-100 dark:border-slate-800">
                 <div>
                   <p className="text-[11px] uppercase font-extrabold tracking-wider text-slate-900 dark:text-white">
