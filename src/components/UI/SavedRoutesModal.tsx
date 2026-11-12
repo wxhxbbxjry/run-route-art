@@ -71,7 +71,7 @@ export default function SavedRoutesModal({
     if (currentRouteData) {
       const modeLabel =
         currentRouteData.mode === 'random'
-          ? `Loop ${currentRouteData.distanceKm.toFixed(1)}K`
+          ? `${currentRouteData.shape === 'out_and_back' ? 'Out & Back' : 'Loop'} ${currentRouteData.distanceKm.toFixed(1)}K`
           : `Rute Manual ${currentRouteData.distanceKm.toFixed(1)}K`;
       setNewRouteName(modeLabel.trim());
     }

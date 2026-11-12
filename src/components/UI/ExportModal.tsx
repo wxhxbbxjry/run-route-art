@@ -26,11 +26,24 @@ export default function ExportModal({
   paceSeconds,
 }: ExportModalProps) {
   const [routeName, setRouteName] = useState(() => {
-    if (routeData.mode === 'random') return `Random Loop ${routeData.distanceKm.toFixed(1)}K`;
+    if (routeData.mode === 'random') {
+      const label = routeData.shape === 'out_and_back' ? 'Out & Back' : 'Random Loop';
+      return `${label} ${routeData.distanceKm.toFixed(1)}K`;
+    }
     return `Manual Run Route ${routeData.distanceKm.toFixed(1)}K`;
   });
 
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (routeData.mode === 'random') {
+      const label = routeData.shape === 'out_and_back' ? 'Out & Back' : 'Random Loop';
+      setRouteName(`${label} ${routeData.distanceKm.toFixed(1)}K`);
+    } else {
+      setRouteName(`Manual Run Route ${routeData.distanceKm.toFixed(1)}K`);
+    }
+  }, [isOpen, routeData]);
 
   useEffect(() => {
     if (!isOpen) return;

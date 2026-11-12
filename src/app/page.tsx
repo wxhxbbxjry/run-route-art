@@ -9,15 +9,33 @@ import {
   RouteMode,
   TileLayerId,
   UnitSystem,
+  GeneratorShape,
+  RoutePreferences,
+  DEFAULT_ROUTE_PREFERENCES,
+  RouteCandidate,
+  RouteQualityScore,
 } from '@/lib/types';
 import { loadStravaOutdoorStyle } from '@/lib/layers';
 import {
   fetchSmartManualRoute,
-  generateAccurateLoop,
   buildRouteData,
   snapWaypointToVehicleRoad,
+  evaluateRouteQuality,
+  generateRouteCandidates,
+  generateNextCandidate,
 } from '@/lib/osrm';
-import { checkObvitnasViolation, pushOutOfObvitnas } from '@/lib/obvitnas';
+import {
+  arePolylinesTooSimilar,
+  calculatePolylineDistance,
+  computeRouteQualityScore,
+  findClosestPointOnPolyline,
+  getInsertionIndexForSegment,
+} from '@/lib/geo';
+import {
+  checkObvitnasViolation,
+  pushOutOfObvitnas,
+  routeHasObvitnasViolation,
+} from '@/lib/obvitnas';
 
 import Sidebar from '@/components/UI/Sidebar';
 import StatsHud from '@/components/UI/StatsHud';
@@ -45,6 +63,15 @@ const DEFAULT_CENTER: LatLng = {
 };
 
 const THEME_STORAGE_KEY = 'runroute_theme_v1';
+
+function makeGenKey(
+  start: LatLng,
+  distKm: number,
+  shape: GeneratorShape,
+  prefs: RoutePreferences
+): string {
+  return `${start.lat.toFixed(4)}:${start.lng.toFixed(4)}|${distKm}|${shape}|${prefs.environment}|${prefs.traffic}|${prefs.flow}`;
+}
 
 export default function HomePage() {
   // Navigation & Theme Defaults
@@ -105,12 +132,71 @@ export default function HomePage() {
     setManualWaypoints(wps);
   }, []);
 
-  // 2. ISOLATED STATE: Random Loop Generator Mode
+  // 2. ISOLATED STATE: RunCulture-Style Multi-Candidate Generator Mode (Car/Motor Compliant, Zero Elevation)
   const [loopStartLocation, setLoopStartLocation] = useState<LatLng | null>(DEFAULT_CENTER);
   const [targetDistanceKm, setTargetDistanceKm] = useState<number>(10);
-  const [loopHeadingOffset, setLoopHeadingOffset] = useState<number>(45);
-  const [loopWaypoints, setLoopWaypoints] = useState<Waypoint[]>([]);
-  const [loopRouteData, setLoopRouteData] = useState<RouteData | null>(null);
+  const [routeShape, setRouteShape] = useState<GeneratorShape>('loop');
+  const [routePreferences, setRoutePreferences] = useState<RoutePreferences>(
+    DEFAULT_ROUTE_PREFERENCES
+  );
+  const [candidates, setCandidates] = useState<RouteCandidate[]>([]);
+  const [activeCandidateId, setActiveCandidateId] = useState<string | null>(null);
+  const [peekCandidateId, setPeekCandidateId] = useState<string | null>(null);
+  const [exhaustedUnique, setExhaustedUnique] = useState<boolean>(false);
+  const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
+  const [hasPrefetchedNext, setHasPrefetchedNext] = useState<boolean>(false);
+  const [undoVersion, setUndoVersion] = useState<number>(0);
+
+  const seedOffsetRef = useRef<number>(0);
+  const generatorAbortRef = useRef<AbortController | null>(null);
+  const prefetchAbortRef = useRef<AbortController | null>(null);
+  const prefetchTimerRef = useRef<number | null>(null);
+  const shownFallbackNoticeRef = useRef<boolean>(false);
+  const generationKeyRef = useRef<string>('');
+  const anchorEditSeqRef = useRef<number>(0);
+  const prefetchedRef = useRef<{
+    key: string;
+    candidate: RouteCandidate | null;
+    exhausted: boolean;
+  } | null>(null);
+  const candidateHistoryRef = useRef<
+    Record<
+      string,
+      Array<{
+        anchors: LatLng[];
+        anchorIndices: number[];
+        routeData: RouteData;
+        quality: RouteQualityScore;
+        isEdited: boolean;
+      }>
+    >
+  >({});
+
+  // Cleanup active AbortControllers and background prefetch timer on unmount
+  useEffect(() => {
+    return () => {
+      if (prefetchTimerRef.current !== null) {
+        window.clearTimeout(prefetchTimerRef.current);
+        prefetchTimerRef.current = null;
+      }
+      generatorAbortRef.current?.abort();
+      prefetchAbortRef.current?.abort();
+    };
+  }, []);
+
+  // Invalidate background prefetch whenever target config changes
+  useEffect(() => {
+    if (prefetchTimerRef.current !== null) {
+      window.clearTimeout(prefetchTimerRef.current);
+      prefetchTimerRef.current = null;
+    }
+    if (prefetchAbortRef.current) {
+      prefetchAbortRef.current.abort();
+      prefetchAbortRef.current = null;
+    }
+    prefetchedRef.current = null;
+    setHasPrefetchedNext(false);
+  }, [loopStartLocation, targetDistanceKm, routeShape, routePreferences]);
 
   // Auto-detect GPS position silently on app startup
   useEffect(() => {
@@ -159,9 +245,45 @@ export default function HomePage() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Mode-isolated active states (Manual Tap & Random Loop)
-  const activeWaypoints = currentMode === 'manual' ? manualWaypoints : loopWaypoints;
-  const activeRouteData = currentMode === 'manual' ? manualRouteData : loopRouteData;
+  // Mode-isolated active states (Manual Tap & RunCulture Generator)
+  const activeCandidate = candidates.find((c) => c.id === activeCandidateId) ?? null;
+  const peekCandidate =
+    peekCandidateId && peekCandidateId !== activeCandidateId
+      ? candidates.find((c) => c.id === peekCandidateId) ?? null
+      : null;
+
+  const activeWaypoints =
+    currentMode === 'manual'
+      ? manualWaypoints
+      : activeCandidate
+      ? activeCandidate.routeData.waypoints
+      : loopStartLocation
+      ? [
+          {
+            id: 'loop-preview-start',
+            lat: loopStartLocation.lat,
+            lng: loopStartLocation.lng,
+            name: 'Start / Finish',
+          },
+        ]
+      : [];
+
+  const activeRouteData =
+    currentMode === 'manual'
+      ? manualRouteData
+      : activeCandidate
+      ? activeCandidate.routeData
+      : null;
+
+  const activePeekRouteData =
+    currentMode === 'random' && peekCandidate ? peekCandidate.routeData : null;
+
+  const activeEditableAnchors =
+    currentMode === 'random' && activeCandidate ? activeCandidate.anchors : [];
+
+  const canUndoEdit =
+    undoVersion >= 0 &&
+    Boolean(activeCandidate && (candidateHistoryRef.current[activeCandidate.id]?.length ?? 0) > 0);
 
   const recomputeManualRoute = useCallback(
     async (nextWaypoints: Waypoint[]) => {
@@ -198,6 +320,24 @@ export default function HomePage() {
 
       commitManualWaypoints(alignedWaypoints);
       setManualRouteData(buildRouteData(alignedWaypoints, result, 'manual'));
+
+      // Non-blocking background quality enrichment (greenery, water, traffic & signals)
+      void evaluateRouteQuality({
+        coordinates: result.coordinates,
+        distanceKm: result.distanceKm,
+        shape: 'loop',
+        fallbackQuietPct: result.estimatedQuietPct,
+        fallbackSignalPoints: result.signalPoints,
+      })
+        .then(({ quality, signalPoints }) => {
+          if (manualRouteSeqRef.current !== seq) return;
+          setManualRouteData((prev) =>
+            prev ? { ...prev, quality, signalPoints } : prev
+          );
+        })
+        .catch(() => {
+          // Non-critical telemetry enrichment
+        });
     },
     [commitManualWaypoints]
   );
@@ -234,18 +374,654 @@ export default function HomePage() {
         await recomputeManualRoute(updatedWaypoints);
       } else if (currentMode === 'random') {
         hasManualLoopStartRef.current = true;
+        if (prefetchTimerRef.current !== null) {
+          window.clearTimeout(prefetchTimerRef.current);
+          prefetchTimerRef.current = null;
+        }
+        generatorAbortRef.current?.abort();
+        prefetchAbortRef.current?.abort();
+        prefetchedRef.current = null;
+        setHasPrefetchedNext(false);
+        setCandidates([]);
+        setActiveCandidateId(null);
+        setPeekCandidateId(null);
+        setExhaustedUnique(false);
         setLoopStartLocation(effectiveLatLng);
         addToast(
           'info',
           'Titik Start Dipilih',
-          `Lokasi diatur ke [${effectiveLatLng.lat.toFixed(4)}, ${effectiveLatLng.lng.toFixed(4)}]`
+          `Lokasi diatur ke [${effectiveLatLng.lat.toFixed(4)}, ${effectiveLatLng.lng.toFixed(4)}]. Klik Generate Rute untuk saran baru.`
         );
       }
     },
     [currentMode, commitManualWaypoints, recomputeManualRoute, addToast]
   );
 
-  // Manual & Loop Mode: Drag Waypoint (Start, Finish, intermediate pins in all modes)
+  // Cancel all pending RunCulture candidate requests
+  const cancelAllGeneratorWork = useCallback(() => {
+    if (prefetchTimerRef.current !== null) {
+      window.clearTimeout(prefetchTimerRef.current);
+      prefetchTimerRef.current = null;
+    }
+    if (generatorAbortRef.current) {
+      generatorAbortRef.current.abort();
+      generatorAbortRef.current = null;
+    }
+    if (prefetchAbortRef.current) {
+      prefetchAbortRef.current.abort();
+      prefetchAbortRef.current = null;
+    }
+    prefetchedRef.current = null;
+    setHasPrefetchedNext(false);
+  }, []);
+
+  // Silent background +1 candidate prefetch (delayed 1.2s so immediate map/card edits never contend)
+  const startBackgroundPrefetch = useCallback(
+    (
+      key: string,
+      start: LatLng,
+      distKm: number,
+      shape: GeneratorShape,
+      prefs: RoutePreferences,
+      existingCoords: LatLng[][],
+      nextSeed: number
+    ) => {
+      if (existingCoords.length === 0 || existingCoords.length >= 6) return;
+      if (prefetchTimerRef.current !== null) {
+        window.clearTimeout(prefetchTimerRef.current);
+        prefetchTimerRef.current = null;
+      }
+      if (prefetchAbortRef.current) {
+        prefetchAbortRef.current.abort();
+        prefetchAbortRef.current = null;
+      }
+
+      const controller = new AbortController();
+      prefetchAbortRef.current = controller;
+
+      prefetchTimerRef.current = window.setTimeout(() => {
+        prefetchTimerRef.current = null;
+        if (controller.signal.aborted || generationKeyRef.current !== key) return;
+
+        void generateNextCandidate({
+          start,
+          targetKm: distKm,
+          shape,
+          preferences: prefs,
+          existingRoutes: existingCoords,
+          seedOffset: nextSeed,
+          signal: controller.signal,
+        })
+          .then((res) => {
+            if (controller.signal.aborted || generationKeyRef.current !== key) return;
+            prefetchedRef.current = {
+              key,
+              candidate: res.candidate,
+              exhausted: res.exhaustedUnique,
+            };
+            setHasPrefetchedNext(Boolean(res.candidate));
+          })
+          .catch(() => {
+            // Non-critical background prefetch
+          });
+      }, 1200);
+    },
+    []
+  );
+
+  // RunCulture Generator: Generate up to 3 spatially unique car/motor compliant routes
+  const handleGenerateBatch = useCallback(
+    async (overrideStart?: LatLng, explicitSeedOffset?: number) => {
+      const start = overrideStart ?? loopStartLocation;
+      if (!start) {
+        addToast('warning', 'Pilih Lokasi Awal', 'Klik pada peta untuk menentukan titik start.');
+        return;
+      }
+
+      cancelAllGeneratorWork();
+
+      const seed = explicitSeedOffset !== undefined ? explicitSeedOffset : 0;
+      seedOffsetRef.current = seed;
+      const key = makeGenKey(start, targetDistanceKm, routeShape, routePreferences);
+      generationKeyRef.current = key;
+
+      const controller = new AbortController();
+      generatorAbortRef.current = controller;
+
+      setIsLoadingRoute(true);
+      setIsLoadingMore(false);
+      setExhaustedUnique(false);
+      setPeekCandidateId(null);
+
+      try {
+        const res = await generateRouteCandidates({
+          start,
+          targetKm: targetDistanceKm,
+          shape: routeShape,
+          preferences: routePreferences,
+          maxCandidates: 3,
+          existingRoutes: [],
+          seedOffset: seed,
+          signal: controller.signal,
+        });
+
+        if (controller.signal.aborted || generationKeyRef.current !== key) return;
+
+        setIsLoadingRoute(false);
+        candidateHistoryRef.current = {};
+        setUndoVersion((v) => v + 1);
+        setCandidates(res.candidates);
+        setActiveCandidateId(res.candidates[0]?.id ?? null);
+        setExhaustedUnique(res.exhaustedUnique);
+        setFitTrigger((n) => n + 1);
+
+        if (res.usedFallback) {
+          if (!shownFallbackNoticeRef.current) {
+            shownFallbackNoticeRef.current = true;
+            addToast(
+              'info',
+              'Mode Routing Cadangan Aktif',
+              'Valhalla sedang sibuk/offline, rute dialihkan cepat ke jaringan jalan mobil & motor cadangan.'
+            );
+          }
+        } else {
+          shownFallbackNoticeRef.current = false;
+        }
+
+        const top = res.candidates[0];
+        if (top) {
+          const shapeName = routeShape === 'out_and_back' ? 'Pergi-Pulang' : 'Loop';
+          const acc = Math.max(0, 100 - Math.abs(top.quality.metrics.deviationPct)).toFixed(1);
+          addToast(
+            'success',
+            `${res.candidates.length} Saran Rute ${shapeName} Siap!`,
+            `Terbaik #1: ${top.routeData.distanceKm.toFixed(2)} km (Akurasi ${acc}% • Skor ${top.quality.pct}%)`
+          );
+
+          startBackgroundPrefetch(
+            key,
+            start,
+            targetDistanceKm,
+            routeShape,
+            routePreferences,
+            res.candidates.map((c) => c.routeData.coordinates),
+            seed + 1
+          );
+        } else {
+          addToast(
+            'warning',
+            'Rute Tidak Ditemukan',
+            'Coba geser titik start ke jalan raya terdekat atau sesuaikan target jarak.'
+          );
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setIsLoadingRoute(false);
+          addToast('error', 'Gagal Menghitung Rute', 'Periksa koneksi atau coba beberapa saat lagi.');
+        }
+      }
+    },
+    [
+      loopStartLocation,
+      targetDistanceKm,
+      routeShape,
+      routePreferences,
+      cancelAllGeneratorWork,
+      startBackgroundPrefetch,
+      addToast,
+    ]
+  );
+
+  // RunCulture Generator: Add 1 more unique suggestion (consumes prefetched route instantaneously!)
+  const handleGenerateMore = useCallback(async () => {
+    const start = loopStartLocation;
+    if (!start || isLoadingRoute || isLoadingMore || candidates.length >= 6 || exhaustedUnique) {
+      return;
+    }
+
+    const key = makeGenKey(start, targetDistanceKm, routeShape, routePreferences);
+    generationKeyRef.current = key;
+
+    const cached = prefetchedRef.current;
+    if (cached && cached.key === key) {
+      prefetchedRef.current = null;
+      setHasPrefetchedNext(false);
+
+      if (cached.candidate) {
+        const isDuplicate = candidates.some((c) =>
+          arePolylinesTooSimilar(
+            c.routeData.coordinates,
+            cached.candidate!.routeData.coordinates,
+            0.62,
+            32,
+            20
+          )
+        );
+        if (!isDuplicate) {
+          const nextList = [...candidates, cached.candidate];
+          setCandidates(nextList);
+          setActiveCandidateId(cached.candidate.id);
+          setPeekCandidateId(null);
+          setFitTrigger((n) => n + 1);
+          seedOffsetRef.current += 1;
+          addToast(
+            'success',
+            `Saran #${nextList.length} Ditambahkan!`,
+            `${cached.candidate.routeData.distanceKm.toFixed(2)} km • Skor ${cached.candidate.quality.pct}%`
+          );
+          startBackgroundPrefetch(
+            key,
+            start,
+            targetDistanceKm,
+            routeShape,
+            routePreferences,
+            nextList.map((c) => c.routeData.coordinates),
+            seedOffsetRef.current + 1
+          );
+          return;
+        }
+      }
+
+      if (cached.exhausted) {
+        setExhaustedUnique(true);
+        addToast('info', 'Variasi Habis', 'Semua variasi rute unik di sekitar lokasi sudah ditampilkan.');
+        return;
+      }
+    }
+
+    setIsLoadingMore(true);
+    if (prefetchAbortRef.current) {
+      prefetchAbortRef.current.abort();
+      prefetchAbortRef.current = null;
+    }
+    const controller = new AbortController();
+    prefetchAbortRef.current = controller;
+
+    try {
+      const nextSeed = seedOffsetRef.current + 1;
+      seedOffsetRef.current = nextSeed;
+      const res = await generateNextCandidate({
+        start,
+        targetKm: targetDistanceKm,
+        shape: routeShape,
+        preferences: routePreferences,
+        existingRoutes: candidates.map((c) => c.routeData.coordinates),
+        seedOffset: nextSeed,
+        signal: controller.signal,
+      });
+
+      if (controller.signal.aborted || generationKeyRef.current !== key) return;
+      setIsLoadingMore(false);
+
+      if (res.candidate) {
+        const nextList = [...candidates, res.candidate];
+        setCandidates(nextList);
+        setActiveCandidateId(res.candidate.id);
+        setPeekCandidateId(null);
+        setFitTrigger((n) => n + 1);
+        addToast(
+          'success',
+          `Saran #${nextList.length} Ditambahkan!`,
+          `${res.candidate.routeData.distanceKm.toFixed(2)} km • Skor ${res.candidate.quality.pct}%`
+        );
+        startBackgroundPrefetch(
+          key,
+          start,
+          targetDistanceKm,
+          routeShape,
+          routePreferences,
+          nextList.map((c) => c.routeData.coordinates),
+          nextSeed + 1
+        );
+      } else {
+        setExhaustedUnique(true);
+        addToast('info', 'Variasi Maksimal', 'Tidak ada variasi koridor unik tambahan di sekitar sini.');
+      }
+    } catch {
+      if (!controller.signal.aborted) {
+        setIsLoadingMore(false);
+      }
+    }
+  }, [
+    loopStartLocation,
+    isLoadingRoute,
+    isLoadingMore,
+    candidates,
+    exhaustedUnique,
+    targetDistanceKm,
+    routeShape,
+    routePreferences,
+    startBackgroundPrefetch,
+    addToast,
+  ]);
+
+  // Helper: surgically re-route only the edited adjacent legs (2-3 anchors -> ~0.7s instead of 9s!)
+  const spliceCandidateSubroute = useCallback(
+    async (
+      candidate: RouteCandidate,
+      params: {
+        subWaypoints: LatLng[];
+        leftAnchorIdx: number;
+        rightAnchorIdx: number;
+        nextAnchors: LatLng[];
+        midSlotInNext: number | null;
+        mode: 'drag' | 'insert' | 'delete';
+      }
+    ) => {
+      const {
+        subWaypoints,
+        leftAnchorIdx,
+        rightAnchorIdx,
+        nextAnchors,
+        midSlotInNext,
+        mode,
+      } = params;
+
+      const seq = ++anchorEditSeqRef.current;
+      // Pause/cancel background prefetch so anchor edit gets 100% routing bandwidth
+      if (prefetchTimerRef.current !== null) {
+        window.clearTimeout(prefetchTimerRef.current);
+        prefetchTimerRef.current = null;
+      }
+      if (prefetchAbortRef.current) {
+        prefetchAbortRef.current.abort();
+        prefetchAbortRef.current = null;
+      }
+
+      const snapshot = {
+        anchors: candidate.anchors,
+        anchorIndices: candidate.anchorIndices,
+        routeData: candidate.routeData,
+        quality: candidate.quality,
+        isEdited: candidate.isEdited,
+      };
+
+      const coords = candidate.routeData.coordinates;
+      const oldIndices = candidate.anchorIndices;
+      const startCoordIdx = Math.max(
+        0,
+        Math.min(coords.length - 1, oldIndices[leftAnchorIdx] ?? 0)
+      );
+      const endCoordIdx = Math.max(
+        startCoordIdx,
+        Math.min(coords.length - 1, oldIndices[rightAnchorIdx] ?? coords.length - 1)
+      );
+
+      setIsLoadingRoute(true);
+      const res = await fetchSmartManualRoute(subWaypoints, true, true, true);
+      if (anchorEditSeqRef.current !== seq) return;
+      setIsLoadingRoute(false);
+
+      if (res.coordinates.length < 2) {
+        addToast('warning', 'Edit Rute Gagal', 'Jalur kendaraan tidak ditemukan pada titik tersebut.');
+        return;
+      }
+
+      if (routeHasObvitnasViolation(res.coordinates).hasViolation) {
+        addToast(
+          'warning',
+          'Dekat Zona Steril Obvitnas',
+          'Geser titik sedikit keluar agar tetap berada di jalan umum.'
+        );
+      }
+
+      const alignedAnchors = [...nextAnchors];
+      if (midSlotInNext !== null && res.snappedWaypoints && res.snappedWaypoints.length >= 2) {
+        alignedAnchors[midSlotInNext] = res.snappedWaypoints[1];
+      }
+
+      const prefix = startCoordIdx > 0 ? coords.slice(0, startCoordIdx) : [];
+      const mid = res.coordinates;
+      const suffix = endCoordIdx + 1 < coords.length ? coords.slice(endCoordIdx + 1) : [];
+      const stitchedCoords = [...prefix, ...mid, ...suffix];
+
+      const newSpanEndIdx = prefix.length + mid.length - 1;
+      const shiftAfterRight = newSpanEndIdx - endCoordIdx;
+      const nextRightIdx = mode === 'delete' ? leftAnchorIdx + 1 : rightAnchorIdx + (mode === 'insert' ? 1 : 0);
+
+      const newAnchorIndices: number[] = alignedAnchors.map((_, k) => {
+        if (k < leftAnchorIdx) return oldIndices[k] ?? 0;
+        if (k === leftAnchorIdx) return prefix.length;
+        if (midSlotInNext !== null && k === midSlotInNext) {
+          const hit = findClosestPointOnPolyline(mid, alignedAnchors[midSlotInNext]);
+          const localIdx = hit
+            ? Math.max(1, Math.min(mid.length - 2, hit.segmentIndex))
+            : Math.floor(mid.length / 2);
+          return prefix.length + localIdx;
+        }
+        if (k === nextRightIdx) return newSpanEndIdx;
+        const origIdx = mode === 'insert' ? k - 1 : mode === 'delete' ? k + 1 : k;
+        return Math.max(0, Math.min(stitchedCoords.length - 1, (oldIndices[origIdx] ?? endCoordIdx) + shiftAfterRight));
+      });
+
+      for (let i = 1; i < newAnchorIndices.length; i++) {
+        if (newAnchorIndices[i] <= newAnchorIndices[i - 1]) {
+          newAnchorIndices[i] = Math.min(stitchedCoords.length - 1, newAnchorIndices[i - 1] + 1);
+        }
+      }
+
+      const stitchedDistanceKm = calculatePolylineDistance(stitchedCoords);
+      const immediateQuality = computeRouteQualityScore({
+        coordinates: stitchedCoords,
+        distanceKm: stitchedDistanceKm,
+        targetDistanceKm,
+        shape: candidate.shape,
+        greenPct: candidate.quality.metrics.greenPct,
+        waterPct: candidate.quality.metrics.waterPct,
+        quietPct: candidate.quality.metrics.quietPct,
+        signalsCount: candidate.quality.metrics.signalsCount,
+        preferences: routePreferences,
+      });
+
+      const updatedWaypoints: Waypoint[] = [
+        {
+          id: 'start-point',
+          lat: stitchedCoords[0].lat,
+          lng: stitchedCoords[0].lng,
+          name: 'Start / Finish',
+        },
+      ];
+
+      const updatedRouteData = buildRouteData(
+        updatedWaypoints,
+        {
+          ...res,
+          coordinates: stitchedCoords,
+          distanceKm: stitchedDistanceKm,
+        },
+        'random',
+        targetDistanceKm,
+        {
+          shape: candidate.shape,
+          quality: immediateQuality,
+          signalPoints: candidate.routeData.signalPoints,
+        }
+      );
+
+      if (!candidateHistoryRef.current[candidate.id]) {
+        candidateHistoryRef.current[candidate.id] = [];
+      }
+      candidateHistoryRef.current[candidate.id].push(snapshot);
+      setUndoVersion((v) => v + 1);
+
+      setCandidates((prev) =>
+        prev.map((c) =>
+          c.id === candidate.id
+            ? {
+                ...c,
+                anchors: alignedAnchors,
+                anchorIndices: newAnchorIndices,
+                routeData: updatedRouteData,
+                quality: immediateQuality,
+                isEdited: true,
+              }
+            : c
+        )
+      );
+
+      void evaluateRouteQuality({
+        coordinates: stitchedCoords,
+        distanceKm: stitchedDistanceKm,
+        targetDistanceKm,
+        shape: candidate.shape,
+        preferences: routePreferences,
+        fallbackQuietPct: res.estimatedQuietPct,
+        fallbackSignalPoints: candidate.routeData.signalPoints ?? res.signalPoints,
+      })
+        .then(({ quality, signalPoints }) => {
+          if (anchorEditSeqRef.current !== seq) return;
+          setCandidates((prev) =>
+            prev.map((c) =>
+              c.id === candidate.id
+                ? {
+                    ...c,
+                    quality,
+                    routeData: {
+                      ...c.routeData,
+                      quality,
+                      signalPoints,
+                    },
+                  }
+                : c
+            )
+          );
+        })
+        .catch(() => {
+          // Non-blocking enrichment
+        });
+    },
+    [targetDistanceKm, routePreferences, addToast]
+  );
+
+  // Interactive Anchor Drag in Generator Mode
+  const handleAnchorDrag = useCallback(
+    async (index: number, newPos: LatLng) => {
+      hasUserMapInteractionRef.current = true;
+      const obvCheck = checkObvitnasViolation(newPos);
+      let effectivePos = newPos;
+      if (obvCheck.isRestricted && obvCheck.zone) {
+        addToast(
+          'error',
+          'Objek Vital Nasional',
+          `Titik berada di zona ${obvCheck.zone.name}. Dialihkan ke jalan luar.`
+        );
+        effectivePos = pushOutOfObvitnas(newPos);
+      }
+
+      if (index === 0 || !activeCandidate || activeCandidate.anchors.length < 3) {
+        hasManualLoopStartRef.current = true;
+        setLoopStartLocation(effectivePos);
+        await handleGenerateBatch(effectivePos, 0);
+        return;
+      }
+
+      const anchors = activeCandidate.anchors;
+      const safeIdx = Math.min(anchors.length - 2, Math.max(1, index));
+      const nextAnchors = anchors.map((a, i) => (i === safeIdx ? effectivePos : a));
+      await spliceCandidateSubroute(activeCandidate, {
+        subWaypoints: [anchors[safeIdx - 1], effectivePos, anchors[safeIdx + 1]],
+        leftAnchorIdx: safeIdx - 1,
+        rightAnchorIdx: safeIdx + 1,
+        nextAnchors,
+        midSlotInNext: safeIdx,
+        mode: 'drag',
+      });
+    },
+    [activeCandidate, handleGenerateBatch, spliceCandidateSubroute, addToast]
+  );
+
+  // Click route line in Generator Mode -> insert new anchor at segment & bend path
+  const handleAnchorInsert = useCallback(
+    async (clickedLatLng: LatLng) => {
+      if (!activeCandidate || activeCandidate.anchors.length < 2) return;
+      hasUserMapInteractionRef.current = true;
+      const obvCheck = checkObvitnasViolation(clickedLatLng);
+      const effectivePos = obvCheck.isRestricted
+        ? pushOutOfObvitnas(clickedLatLng)
+        : clickedLatLng;
+
+      const hit = findClosestPointOnPolyline(
+        activeCandidate.routeData.coordinates,
+        effectivePos
+      );
+      if (!hit) return;
+
+      const rawInsertAt = getInsertionIndexForSegment(
+        activeCandidate.anchorIndices,
+        hit.segmentIndex
+      );
+      const insertAt = Math.max(
+        1,
+        Math.min(activeCandidate.anchors.length - 1, rawInsertAt)
+      );
+
+      const anchors = activeCandidate.anchors;
+      const nextAnchors = [
+        ...anchors.slice(0, insertAt),
+        effectivePos,
+        ...anchors.slice(insertAt),
+      ];
+      await spliceCandidateSubroute(activeCandidate, {
+        subWaypoints: [anchors[insertAt - 1], effectivePos, anchors[insertAt]],
+        leftAnchorIdx: insertAt - 1,
+        rightAnchorIdx: insertAt,
+        nextAnchors,
+        midSlotInNext: insertAt,
+        mode: 'insert',
+      });
+    },
+    [activeCandidate, spliceCandidateSubroute]
+  );
+
+  // Click/Right-click intermediate anchor dot in Generator Mode -> remove anchor
+  const handleAnchorDelete = useCallback(
+    async (index: number) => {
+      if (!activeCandidate) return;
+      const anchors = activeCandidate.anchors;
+      if (index <= 0 || index >= anchors.length - 1 || anchors.length <= 3) {
+        return;
+      }
+      const nextAnchors = anchors.filter((_, i) => i !== index);
+      await spliceCandidateSubroute(activeCandidate, {
+        subWaypoints: [anchors[index - 1], anchors[index + 1]],
+        leftAnchorIdx: index - 1,
+        rightAnchorIdx: index + 1,
+        nextAnchors,
+        midSlotInNext: null,
+        mode: 'delete',
+      });
+      addToast('info', 'Anchor Dihapus', `Titik anchor #${index} dihapus dari jalur.`);
+    },
+    [activeCandidate, spliceCandidateSubroute, addToast]
+  );
+
+  // Per-candidate Undo Edit
+  const handleUndoCandidateEdit = useCallback(() => {
+    if (!activeCandidate) return;
+    const stack = candidateHistoryRef.current[activeCandidate.id];
+    if (!stack || stack.length === 0) return;
+
+    const prevSnap = stack.pop()!;
+    setUndoVersion((v) => v + 1);
+
+    setCandidates((prev) =>
+      prev.map((c) =>
+        c.id === activeCandidate.id
+          ? {
+              ...c,
+              anchors: prevSnap.anchors,
+              anchorIndices: prevSnap.anchorIndices,
+              routeData: prevSnap.routeData,
+              quality: prevSnap.quality,
+              isEdited: prevSnap.isEdited,
+            }
+          : c
+      )
+    );
+    addToast('info', 'Edit Dibatalkan', 'Jalur saran rute dikembalikan ke kondisi sebelumnya.');
+  }, [activeCandidate, addToast]);
+
+  // Manual & Preview Start Pin Drag
   const handleWaypointDrag = useCallback(
     async (index: number, newPos: LatLng) => {
       hasUserMapInteractionRef.current = true;
@@ -291,28 +1067,11 @@ export default function HomePage() {
         await recomputeManualRoute(updated);
       } else if (currentMode === 'random') {
         hasManualLoopStartRef.current = true;
-        // Dragging start pin in Random Loop mode: reposition start and regenerate loop
         setLoopStartLocation(effectivePos);
-        addToast('info', 'Titik Start Dipindahkan', 'Menghitung rute loop baru di posisi baru...');
-        setIsLoadingRoute(true);
-        const result = await generateAccurateLoop(
-          effectivePos,
-          targetDistanceKm,
-          loopHeadingOffset,
-          true,
-          true
-        );
-        setIsLoadingRoute(false);
-        const pinPos = result.effectiveStart || effectivePos;
-        const loopWps = [
-          { id: 'start-point', lat: pinPos.lat, lng: pinPos.lng, name: 'Start / Finish' },
-        ];
-        setLoopWaypoints(loopWps);
-        setLoopRouteData(buildRouteData(loopWps, result, 'random', targetDistanceKm));
-        setFitTrigger((n) => n + 1);
+        await handleGenerateBatch(effectivePos, 0);
       }
     },
-    [currentMode, targetDistanceKm, loopHeadingOffset, commitManualWaypoints, recomputeManualRoute, addToast]
+    [currentMode, commitManualWaypoints, recomputeManualRoute, handleGenerateBatch, addToast]
   );
 
   // Manual Mode: Delete Single Waypoint (OnTheGoMap click/right-click delete)
@@ -416,78 +1175,32 @@ export default function HomePage() {
     addToast('info', 'Arah Dibalik', 'Titik awal dan akhir rute telah ditukar.');
   }, [commitManualWaypoints, recomputeManualRoute, addToast]);
 
-  // Random Loop: Generate Loop
-  const handleGenerateLoop = useCallback(
-    async (offsetHeading?: number) => {
-      if (!loopStartLocation) {
-        addToast('warning', 'Pilih Lokasi Awal', 'Klik pada peta untuk menentukan titik start.');
-        return;
-      }
-
-      setIsLoadingRoute(true);
-      const heading = offsetHeading !== undefined ? offsetHeading : loopHeadingOffset;
-      setLoopHeadingOffset(heading);
-
-      // High-accuracy natural loop generator
-      const result = await generateAccurateLoop(
-        loopStartLocation,
-        targetDistanceKm,
-        heading,
-        true,
-        true
-      );
-      setIsLoadingRoute(false);
-
-      if (result.error) {
-        addToast('warning', 'Routing Fallback', result.error);
-      }
-
-      const pinLoc = result.effectiveStart || loopStartLocation;
-      const loopWps: Waypoint[] = [
-        {
-          id: 'start-point',
-          lat: pinLoc.lat,
-          lng: pinLoc.lng,
-          name: 'Start / Finish',
-        },
-      ];
-
-      setLoopWaypoints(loopWps);
-      const built = buildRouteData(loopWps, result, 'random', targetDistanceKm);
-      setLoopRouteData(built);
-      setFitTrigger((n) => n + 1);
-
-      const accuracy = (
-        (1 - Math.abs(result.distanceKm - targetDistanceKm) / targetDistanceKm) *
-        100
-      ).toFixed(1);
-
-      addToast(
-        'success',
-        `Random Loop ${targetDistanceKm}K Siap!`,
-        `Jarak: ${result.distanceKm.toFixed(2)} km (Akurasi ${accuracy}%). Start & Finish 100% bertemu!`
-      );
-    },
-    [loopStartLocation, targetDistanceKm, loopHeadingOffset, addToast]
-  );
-
-  // Random Loop: Re-roll
+  // Generator: Re-roll (shift seedOffset to discover fresh corridors)
   const handleReRollLoop = useCallback(() => {
-    const nextHeading = (loopHeadingOffset + 60 + Math.random() * 30) % 360;
-    setLoopHeadingOffset(nextHeading);
-    handleGenerateLoop(nextHeading);
-  }, [loopHeadingOffset, handleGenerateLoop]);
+    const nextSeed = seedOffsetRef.current + 3;
+    void handleGenerateBatch(undefined, nextSeed);
+  }, [handleGenerateBatch]);
 
-  // Random Loop: Reset Loop
+  // Generator: Reset all candidates & defaults
   const handleResetLoop = useCallback(() => {
-    setLoopWaypoints([]);
-    setLoopRouteData(null);
+    cancelAllGeneratorWork();
+    seedOffsetRef.current = 0;
+    generationKeyRef.current = '';
+    candidateHistoryRef.current = {};
+    setUndoVersion((v) => v + 1);
+    setCandidates([]);
+    setActiveCandidateId(null);
+    setPeekCandidateId(null);
+    setExhaustedUnique(false);
+    setIsLoadingRoute(false);
+    setIsLoadingMore(false);
     setTargetDistanceKm(10);
-    setLoopHeadingOffset(45);
+    setRouteShape('loop');
+    setRoutePreferences(DEFAULT_ROUTE_PREFERENCES);
     hasManualLoopStartRef.current = false;
     setLoopStartLocation(userGpsLocation || DEFAULT_CENTER);
-    addToast('info', 'Random Loop Direset', 'Rute loop dihapus dan jarak dikembalikan ke 10 KM.');
-  }, [userGpsLocation, addToast]);
+    addToast('info', 'Generator Direset', 'Semua saran rute dihapus dan target dikembalikan ke default.');
+  }, [cancelAllGeneratorWork, userGpsLocation, addToast]);
 
   // Load Imported GPX or Saved Route
   const handleLoadRoute = useCallback(
@@ -520,6 +1233,11 @@ export default function HomePage() {
         const userLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         hasUserMapInteractionRef.current = true;
         hasManualLoopStartRef.current = true;
+        cancelAllGeneratorWork();
+        setCandidates([]);
+        setActiveCandidateId(null);
+        setPeekCandidateId(null);
+        setExhaustedUnique(false);
         setUserGpsLocation(userLoc);
         setLoopStartLocation(userLoc);
         setFlyToLocation(userLoc);
@@ -534,7 +1252,7 @@ export default function HomePage() {
       },
       { enableHighAccuracy: true, timeout: 8000 }
     );
-  }, [addToast]);
+  }, [cancelAllGeneratorWork, addToast]);
 
   // GPS locate button callback from RouteMap right dock
   const handleMapLocateDetected = useCallback(
@@ -543,6 +1261,11 @@ export default function HomePage() {
       setUserGpsLocation(detected);
       if (currentMode === 'random') {
         hasManualLoopStartRef.current = true;
+        cancelAllGeneratorWork();
+        setCandidates([]);
+        setActiveCandidateId(null);
+        setPeekCandidateId(null);
+        setExhaustedUnique(false);
         setLoopStartLocation(detected);
       }
       addToast(
@@ -551,7 +1274,7 @@ export default function HomePage() {
         `Koordinat [${detected.lat.toFixed(4)}, ${detected.lng.toFixed(4)}]`
       );
     },
-    [currentMode, addToast]
+    [currentMode, cancelAllGeneratorWork, addToast]
   );
 
   const handleResetMap = useCallback(() => {
@@ -581,6 +1304,9 @@ export default function HomePage() {
         <RouteMap
           waypoints={activeWaypoints}
           routeData={activeRouteData}
+          peekRouteData={activePeekRouteData}
+          editableAnchors={activeEditableAnchors}
+          requestedStartLocation={currentMode === 'random' ? loopStartLocation : null}
           routeMode={currentMode}
           selectedTile={selectedTile}
           unitSystem={unitSystem}
@@ -592,6 +1318,9 @@ export default function HomePage() {
           onLocationError={(msg) => addToast('warning', 'Gagal Mengambil GPS', msg)}
           onWaypointDrag={handleWaypointDrag}
           onWaypointDelete={handleWaypointDelete}
+          onAnchorDrag={handleAnchorDrag}
+          onAnchorInsert={handleAnchorInsert}
+          onAnchorDelete={handleAnchorDelete}
           onResetMap={handleResetMap}
           flyToLocation={flyToLocation}
         />
@@ -619,14 +1348,40 @@ export default function HomePage() {
         unitSystem={unitSystem}
         onToggleUnit={() => setUnitSystem((u) => (u === 'km' ? 'mi' : 'km'))}
         onOpenExport={() => setIsExportOpen(true)}
-        // Random loop props
+        // RunCulture Generator props
         startLocation={loopStartLocation}
         targetDistanceKm={targetDistanceKm}
         onTargetDistanceChange={setTargetDistanceKm}
+        routeShape={routeShape}
+        onRouteShapeChange={(shape) => {
+          anchorEditSeqRef.current++;
+          setIsLoadingRoute(false);
+          setRouteShape(shape);
+        }}
+        preferences={routePreferences}
+        onPreferencesChange={setRoutePreferences}
         onUseMyLocation={handleUseMyLocation}
-        onGenerateLoop={() => handleGenerateLoop()}
+        onGenerateLoop={() => {
+          void handleGenerateBatch();
+        }}
         onReRollLoop={handleReRollLoop}
         onResetLoop={handleResetLoop}
+        onGenerateMore={() => {
+          void handleGenerateMore();
+        }}
+        candidates={candidates}
+        activeCandidateId={activeCandidateId}
+        onSelectCandidate={(id) => {
+          setActiveCandidateId(id);
+          setPeekCandidateId(null);
+          setFitTrigger((n) => n + 1);
+        }}
+        onPeekCandidate={setPeekCandidateId}
+        canUndoEdit={canUndoEdit}
+        onUndoCandidateEdit={handleUndoCandidateEdit}
+        hasPrefetchedNext={hasPrefetchedNext}
+        exhaustedUnique={exhaustedUnique}
+        isLoadingMore={isLoadingMore}
         isLoading={isLoadingRoute}
       />
 

@@ -55,6 +55,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://tiles.openfreemap.org" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://tiles.openfreemap.org" />
         <link rel="preconnect" href="https://valhalla1.openstreetmap.de" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://brouter.de" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://router.project-osrm.org" crossOrigin="anonymous" />
       </head>
       <body className="font-sans antialiased bg-[#f1f5f9] text-slate-900 overflow-hidden w-screen h-screen">

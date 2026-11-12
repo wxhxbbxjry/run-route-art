@@ -1,7 +1,15 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
-import { RouteMode, LatLng, Waypoint, RouteData } from '@/lib/types';
+import {
+  RouteMode,
+  LatLng,
+  Waypoint,
+  RouteData,
+  GeneratorShape,
+  RoutePreferences,
+  RouteCandidate,
+} from '@/lib/types';
 import ManualMode from './ManualMode';
 import RandomLoopMode from './RandomLoopMode';
 import {
@@ -35,14 +43,28 @@ interface SidebarProps {
   unitSystem?: 'km' | 'mi';
   onToggleUnit?: () => void;
   onOpenExport?: () => void;
-  // Random Loop props
+  // Random Loop / RunCulture Generator props
   startLocation: LatLng | null;
   targetDistanceKm: number;
   onTargetDistanceChange: (km: number) => void;
+  routeShape: GeneratorShape;
+  onRouteShapeChange: (shape: GeneratorShape) => void;
+  preferences: RoutePreferences;
+  onPreferencesChange: React.Dispatch<React.SetStateAction<RoutePreferences>>;
   onUseMyLocation: () => void;
   onGenerateLoop: () => void;
   onReRollLoop: () => void;
   onResetLoop: () => void;
+  onGenerateMore: () => void;
+  candidates: RouteCandidate[];
+  activeCandidateId: string | null;
+  onSelectCandidate: (id: string) => void;
+  onPeekCandidate: (id: string | null) => void;
+  canUndoEdit: boolean;
+  onUndoCandidateEdit: () => void;
+  hasPrefetchedNext: boolean;
+  exhaustedUnique: boolean;
+  isLoadingMore: boolean;
   // Common
   isLoading: boolean;
 }
@@ -68,10 +90,24 @@ export default function Sidebar({
   startLocation,
   targetDistanceKm,
   onTargetDistanceChange,
+  routeShape,
+  onRouteShapeChange,
+  preferences,
+  onPreferencesChange,
   onUseMyLocation,
   onGenerateLoop,
   onReRollLoop,
   onResetLoop,
+  onGenerateMore,
+  candidates,
+  activeCandidateId,
+  onSelectCandidate,
+  onPeekCandidate,
+  canUndoEdit,
+  onUndoCandidateEdit,
+  hasPrefetchedNext,
+  exhaustedUnique,
+  isLoadingMore,
   isLoading,
 }: SidebarProps) {
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
@@ -473,6 +509,7 @@ export default function Sidebar({
   const displayDist = isMiles ? distKm * 0.621371 : distKm;
   const unitLabel = isMiles ? 'MI' : 'KM';
   const isDarkTheme = theme === 'dark';
+  const displayedShape = routeData?.shape ?? routeShape;
 
   return (
     <>
@@ -599,12 +636,26 @@ export default function Sidebar({
               startLocation={startLocation}
               targetDistanceKm={targetDistanceKm}
               onTargetDistanceChange={onTargetDistanceChange}
+              routeShape={routeShape}
+              onRouteShapeChange={onRouteShapeChange}
+              preferences={preferences}
+              onPreferencesChange={onPreferencesChange}
               onUseMyLocation={onUseMyLocation}
               onGenerateLoop={onGenerateLoop}
               onReRoll={onReRollLoop}
               onResetLoop={onResetLoop}
-              routeData={routeData}
+              onGenerateMore={onGenerateMore}
+              candidates={candidates}
+              activeCandidateId={activeCandidateId}
+              onSelectCandidate={onSelectCandidate}
+              onPeekCandidate={onPeekCandidate}
+              canUndoEdit={canUndoEdit}
+              onUndoCandidateEdit={onUndoCandidateEdit}
+              hasPrefetchedNext={hasPrefetchedNext}
+              exhaustedUnique={exhaustedUnique}
               isLoading={isLoading}
+              isLoadingMore={isLoadingMore}
+              routeData={routeData}
             />
           )}
         </div>
@@ -665,7 +716,11 @@ export default function Sidebar({
               className="flex items-center gap-2 flex-1 min-w-0 text-left rounded-xl py-0.5 ui-focus-ring active:scale-[0.98] transition-transform"
             >
               <div className="w-8 h-8 rounded-xl bg-[#fc4c02] flex items-center justify-center text-white font-black text-xs shrink-0 shadow-sm">
-                {currentMode === 'random' ? 'L' : 'M'}
+                {currentMode === 'random'
+                  ? displayedShape === 'out_and_back'
+                    ? 'PP'
+                    : 'L'
+                  : 'M'}
               </div>
               <div className="min-w-0">
                 <div className="flex items-baseline gap-1">
@@ -676,8 +731,12 @@ export default function Sidebar({
                     {unitLabel}
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold capitalize truncate">
-                  {currentMode === 'random' ? 'Random Loop' : 'Manual Tap'}
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold truncate">
+                  {currentMode === 'random'
+                    ? displayedShape === 'out_and_back'
+                      ? 'Pergi-Pulang'
+                      : 'Loop Memutar'
+                    : 'Manual Tap'}
                 </p>
               </div>
             </button>
@@ -832,12 +891,26 @@ export default function Sidebar({
                 startLocation={startLocation}
                 targetDistanceKm={targetDistanceKm}
                 onTargetDistanceChange={onTargetDistanceChange}
+                routeShape={routeShape}
+                onRouteShapeChange={onRouteShapeChange}
+                preferences={preferences}
+                onPreferencesChange={onPreferencesChange}
                 onUseMyLocation={onUseMyLocation}
                 onGenerateLoop={onGenerateLoop}
                 onReRoll={onReRollLoop}
                 onResetLoop={onResetLoop}
-                routeData={routeData}
+                onGenerateMore={onGenerateMore}
+                candidates={candidates}
+                activeCandidateId={activeCandidateId}
+                onSelectCandidate={onSelectCandidate}
+                onPeekCandidate={onPeekCandidate}
+                canUndoEdit={canUndoEdit}
+                onUndoCandidateEdit={onUndoCandidateEdit}
+                hasPrefetchedNext={hasPrefetchedNext}
+                exhaustedUnique={exhaustedUnique}
                 isLoading={isLoading}
+                isLoadingMore={isLoadingMore}
+                routeData={routeData}
               />
             )}
           </div>

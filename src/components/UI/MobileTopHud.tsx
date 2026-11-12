@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { RouteData, UnitSystem } from '@/lib/types';
 import { calculatePaceTime, calculateCalories } from '@/lib/geo';
-import { Timer, Flame, Activity, ChevronDown } from 'lucide-react';
+import { Timer, Flame, Activity, ChevronDown, Award } from 'lucide-react';
 import PaceControl, { formatPaceValue } from './PaceControl';
 
 interface MobileTopHudProps {
@@ -20,17 +20,22 @@ export default function MobileTopHud({
   unitSystem = 'km',
 }: MobileTopHudProps) {
   const [isPaceOpen, setIsPaceOpen] = useState(false);
+  const [isScoreOpen, setIsScoreOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!isPaceOpen) return;
+    if (!isPaceOpen && !isScoreOpen) return;
     const handleOutside = (e: MouseEvent | TouchEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsPaceOpen(false);
+        setIsScoreOpen(false);
       }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsPaceOpen(false);
+      if (e.key === 'Escape') {
+        setIsPaceOpen(false);
+        setIsScoreOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleOutside);
     document.addEventListener('touchstart', handleOutside);
@@ -40,7 +45,9 @@ export default function MobileTopHud({
       document.removeEventListener('touchstart', handleOutside);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isPaceOpen]);
+  }, [isPaceOpen, isScoreOpen]);
+
+  const quality = routeData?.quality || null;
 
   const isMiles = unitSystem === 'mi';
   const distanceKm = routeData ? routeData.distanceKm : 0;
@@ -71,15 +78,42 @@ export default function MobileTopHud({
           <div className="flex items-center gap-1 min-w-0" title="Estimasi Kalori">
             <Flame className="w-3.5 h-3.5 text-[#fc4c02] shrink-0" />
             <span className="font-mono font-bold text-[#c93b00] dark:text-orange-400">
-              ~{calories} kcal
+              ~{calories}
+              <span className="hidden min-[410px]:inline"> kcal</span>
             </span>
           </div>
+
+          {quality && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsPaceOpen(false);
+                setIsScoreOpen((open) => !open);
+              }}
+              aria-expanded={isScoreOpen}
+              aria-label="Lihat Detail Skor Rute"
+              title="Skor Kualitas Rute"
+              className={`px-1.5 py-0.5 rounded-lg border text-[10px] font-mono font-black flex items-center gap-1 shrink-0 transition-colors ui-focus-ring ${
+                isScoreOpen
+                  ? 'bg-[#fc4c02] border-[#fc4c02] text-white'
+                  : quality.pct >= 75
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-600/40 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-orange-50 dark:bg-orange-950/60 border-orange-200 dark:border-orange-500/40 text-[#c93b00] dark:text-orange-300'
+              }`}
+            >
+              <Award className="w-3 h-3 shrink-0" />
+              <span>{quality.pct}%</span>
+            </button>
+          )}
         </div>
 
         {/* High-Visibility Quick Pace Button */}
         <button
           type="button"
-          onClick={() => setIsPaceOpen((open) => !open)}
+          onClick={() => {
+            setIsScoreOpen(false);
+            setIsPaceOpen((open) => !open);
+          }}
           aria-expanded={isPaceOpen}
           aria-label="Atur Target Pace Lari"
           className={`group shrink-0 px-2 sm:px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 sm:gap-1.5 ui-btn-secondary ui-focus-ring ${
@@ -128,6 +162,65 @@ export default function MobileTopHud({
             isInteractive={isPaceOpen}
             estimatedTimeFormatted={distanceKm > 0 ? timeInfo.formatted : undefined}
           />
+        </div>
+      )}
+
+      {/* Mobile Dropdown Skor Rute Breakdown Panel */}
+      {isScoreOpen && quality && (
+        <div className="pointer-events-auto mt-2 p-3 rounded-2xl strava-card shadow-2xl space-y-2.5 ui-dropdown-enter text-slate-900 dark:text-slate-100">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+            <span className="text-[11px] uppercase tracking-wider font-extrabold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+              <Award className="w-3.5 h-3.5 text-[#fc4c02]" />
+              Skor Rute ({quality.pct}%)
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsScoreOpen(false)}
+              className="text-[11px] font-bold text-[#c93b00] dark:text-orange-300 hover:underline px-1.5 py-0.5 rounded-lg ui-focus-ring"
+            >
+              Tutup
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+            {quality.parts.map((part) => {
+              const fillPct = part.max > 0 ? Math.min(100, Math.round((part.points / part.max) * 100)) : 0;
+              return (
+                <div key={part.key} className="space-y-0.5">
+                  <div className="flex items-center justify-between text-[10px] tabular-nums">
+                    <span className="font-semibold text-slate-600 dark:text-slate-300 truncate">
+                      {part.label}
+                    </span>
+                    <span className="font-mono font-bold text-slate-800 dark:text-slate-100">
+                      {part.points}/{part.max}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-[#fc4c02]"
+                      style={{ width: `${fillPct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-x-2.5 gap-y-1 text-[10px] text-slate-500 dark:text-slate-400 tabular-nums">
+            {quality.metrics.greenPct !== null && (
+              <span>Hijau: <strong className="text-slate-800 dark:text-slate-200">{quality.metrics.greenPct}%</strong></span>
+            )}
+            {quality.metrics.waterPct !== null && quality.metrics.waterPct > 0 && (
+              <span>Air: <strong className="text-slate-800 dark:text-slate-200">{quality.metrics.waterPct}%</strong></span>
+            )}
+            {quality.metrics.quietPct !== null && (
+              <span>Tenang: <strong className="text-slate-800 dark:text-slate-200">{quality.metrics.quietPct}%</strong></span>
+            )}
+            {quality.metrics.signalsCount !== null && (
+              <span>Lampu: <strong className="text-slate-800 dark:text-slate-200">{quality.metrics.signalsCount}</strong></span>
+            )}
+            <span>Belok: <strong className="text-slate-800 dark:text-slate-200">{quality.metrics.turnsPerKm}/km</strong></span>
+          </div>
         </div>
       )}
     </div>

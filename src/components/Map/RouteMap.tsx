@@ -13,7 +13,12 @@ import {
   loadStravaOutdoorStyle,
   loadStravaDarkStyle,
 } from '@/lib/layers';
-import { buildGradientSegments, buildRouteMileposts, buildCirclePolygonCoords } from '@/lib/geo';
+import {
+  buildGradientSegments,
+  buildRouteMileposts,
+  buildCirclePolygonCoords,
+  haversineDistance,
+} from '@/lib/geo';
 import { OBVITNAS_ZONES } from '@/lib/obvitnas';
 import {
   Layers,
@@ -30,6 +35,9 @@ import {
 interface RouteMapProps {
   waypoints: Waypoint[];
   routeData: RouteData | null;
+  peekRouteData?: RouteData | null;
+  editableAnchors?: LatLng[];
+  requestedStartLocation?: LatLng | null;
   routeMode: RouteMode;
   selectedTile: TileLayerId;
   unitSystem?: UnitSystem;
@@ -41,6 +49,9 @@ interface RouteMapProps {
   onLocationError?: (message: string) => void;
   onWaypointDrag?: (index: number, latlng: LatLng) => void;
   onWaypointDelete?: (index: number) => void;
+  onAnchorDrag?: (index: number, latlng: LatLng) => void;
+  onAnchorInsert?: (latlng: LatLng) => void;
+  onAnchorDelete?: (index: number) => void;
   onResetMap?: () => void;
   flyToLocation?: LatLng | null;
 }
@@ -112,6 +123,62 @@ function buildFullRouteLineGeoJson(routeData: RouteData | null) {
         },
       },
     ],
+  };
+}
+
+function buildStartConnectorGeoJson(
+  requestedStart: LatLng | null,
+  routeData: RouteData | null
+) {
+  if (!requestedStart || !routeData || routeData.coordinates.length === 0) {
+    return {
+      type: 'FeatureCollection' as const,
+      features: [],
+    };
+  }
+  const actualStart = routeData.coordinates[0];
+  if (haversineDistance(requestedStart, actualStart) <= 0.012) {
+    return {
+      type: 'FeatureCollection' as const,
+      features: [],
+    };
+  }
+  return {
+    type: 'FeatureCollection' as const,
+    features: [
+      {
+        type: 'Feature' as const,
+        properties: {},
+        geometry: {
+          type: 'LineString' as const,
+          coordinates: [
+            [requestedStart.lng, requestedStart.lat] as [number, number],
+            [actualStart.lng, actualStart.lat] as [number, number],
+          ],
+        },
+      },
+    ],
+  };
+}
+
+function buildSignalsGeoJson(routeData: RouteData | null) {
+  const pts = routeData?.signalPoints;
+  if (!pts || pts.length === 0) {
+    return {
+      type: 'FeatureCollection' as const,
+      features: [],
+    };
+  }
+  return {
+    type: 'FeatureCollection' as const,
+    features: pts.map((pt, idx) => ({
+      type: 'Feature' as const,
+      properties: { idx },
+      geometry: {
+        type: 'Point' as const,
+        coordinates: [pt.lng, pt.lat] as [number, number],
+      },
+    })),
   };
 }
 
@@ -193,6 +260,9 @@ function findFirstSymbolLayerId(map: maplibregl.Map): string | undefined {
 export default function RouteMap({
   waypoints,
   routeData,
+  peekRouteData = null,
+  editableAnchors = [],
+  requestedStartLocation = null,
   routeMode,
   selectedTile,
   unitSystem = 'km',
@@ -204,6 +274,9 @@ export default function RouteMap({
   onLocationError,
   onWaypointDrag,
   onWaypointDelete,
+  onAnchorDrag,
+  onAnchorInsert,
+  onAnchorDelete,
   onResetMap,
   flyToLocation,
 }: RouteMapProps) {
@@ -219,7 +292,11 @@ export default function RouteMap({
 
   const onMapClickRef = useRef(onMapClick);
   const onUserLocationDetectedRef = useRef(onUserLocationDetected);
+  const onAnchorInsertRef = useRef(onAnchorInsert);
   const routeDataRef = useRef(routeData);
+  const peekRouteDataRef = useRef(peekRouteData);
+  const editableAnchorsRef = useRef(editableAnchors);
+  const requestedStartLocationRef = useRef(requestedStartLocation);
   const waypointsRef = useRef(waypoints);
   const routeModeRef = useRef(routeMode);
   const selectedTileRef = useRef(selectedTile);
@@ -249,8 +326,24 @@ export default function RouteMap({
   }, [onUserLocationDetected]);
 
   useEffect(() => {
+    onAnchorInsertRef.current = onAnchorInsert;
+  }, [onAnchorInsert]);
+
+  useEffect(() => {
     routeDataRef.current = routeData;
   }, [routeData]);
+
+  useEffect(() => {
+    peekRouteDataRef.current = peekRouteData;
+  }, [peekRouteData]);
+
+  useEffect(() => {
+    editableAnchorsRef.current = editableAnchors;
+  }, [editableAnchors]);
+
+  useEffect(() => {
+    requestedStartLocationRef.current = requestedStartLocation;
+  }, [requestedStartLocation]);
 
   useEffect(() => {
     waypointsRef.current = waypoints;
@@ -523,6 +616,65 @@ export default function RouteMap({
       });
     }
 
+    // 3b. RunCulture Candidate Hover-Peek Ghost Layer (Dashed Sky-Blue)
+    if (!map.getSource('route-peek')) {
+      map.addSource('route-peek', {
+        type: 'geojson',
+        data: buildFullRouteLineGeoJson(peekRouteDataRef.current),
+      });
+    } else {
+      const peekSrc = map.getSource('route-peek') as GeoJSONSource | undefined;
+      peekSrc?.setData(buildFullRouteLineGeoJson(peekRouteDataRef.current));
+    }
+
+    if (!map.getLayer('route-peek-line')) {
+      map.addLayer({
+        id: 'route-peek-line',
+        type: 'line',
+        source: 'route-peek',
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': '#0ea5e9',
+          'line-width': 3.6,
+          'line-opacity': 0.88,
+          'line-dasharray': [2.2, 2.2],
+        },
+      });
+    }
+
+    // 3c. Snap Connector Line (requestedStartLocation -> actual vehicle road start if > 12m)
+    if (!map.getSource('route-start-connector')) {
+      map.addSource('route-start-connector', {
+        type: 'geojson',
+        data: buildStartConnectorGeoJson(requestedStartLocationRef.current, routeDataRef.current),
+      });
+    } else {
+      const connSrc = map.getSource('route-start-connector') as GeoJSONSource | undefined;
+      connSrc?.setData(
+        buildStartConnectorGeoJson(requestedStartLocationRef.current, routeDataRef.current)
+      );
+    }
+
+    if (!map.getLayer('route-start-connector-line')) {
+      map.addLayer({
+        id: 'route-start-connector-line',
+        type: 'line',
+        source: 'route-start-connector',
+        layout: {
+          'line-cap': 'round',
+        },
+        paint: {
+          'line-color': tileCfg.isDarkSurface ? '#94a3b8' : '#475569',
+          'line-width': 2.0,
+          'line-opacity': 0.72,
+          'line-dasharray': [1.6, 1.8],
+        },
+      });
+    }
+
     // 4. Route Polyline Layers (Slim Distance Gradient + High-Contrast Casing + Directional Chevrons)
     if (!map.getSource('route-segments')) {
       map.addSource('route-segments', {
@@ -615,6 +767,57 @@ export default function RouteMap({
           'icon-ignore-placement': true,
         },
       });
+    }
+
+    // 4b. Wide invisible hit-target along route line for easy click-to-insert anchor in Generator mode
+    if (!map.getLayer('route-hit-area')) {
+      map.addLayer({
+        id: 'route-hit-area',
+        type: 'line',
+        source: 'route-full-line',
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': '#000000',
+          'line-width': 18,
+          'line-opacity': 0.001,
+        },
+      });
+    }
+
+    // 5. Traffic Signal Markers along Route (RunCulture Intersection Signals)
+    if (!map.getSource('route-signals')) {
+      map.addSource('route-signals', {
+        type: 'geojson',
+        data: buildSignalsGeoJson(routeDataRef.current),
+      });
+    } else {
+      const sigSrc = map.getSource('route-signals') as GeoJSONSource | undefined;
+      sigSrc?.setData(buildSignalsGeoJson(routeDataRef.current));
+    }
+
+    if (!map.getLayer('route-signals-circle')) {
+      map.addLayer({
+        id: 'route-signals-circle',
+        type: 'circle',
+        source: 'route-signals',
+        minzoom: 12.5,
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 12.5, 3.2, 16, 5.2],
+          'circle-color': '#f59e0b',
+          'circle-stroke-color': tileCfg.isDarkSurface ? '#0f172a' : '#ffffff',
+          'circle-stroke-width': 1.6,
+          'circle-opacity': 0.95,
+        },
+      });
+    } else {
+      map.setPaintProperty(
+        'route-signals-circle',
+        'circle-stroke-color',
+        tileCfg.isDarkSurface ? '#0f172a' : '#ffffff'
+      );
     }
   }, []);
 
@@ -774,6 +977,23 @@ export default function RouteMap({
         activePopupRef.current = null;
       }
 
+      if (
+        routeModeRef.current === 'random' &&
+        onAnchorInsertRef.current &&
+        editableAnchorsRef.current.length >= 2 &&
+        map.getLayer('route-hit-area')
+      ) {
+        const bbox: [maplibregl.PointLike, maplibregl.PointLike] = [
+          [e.point.x - 8, e.point.y - 8],
+          [e.point.x + 8, e.point.y + 8],
+        ];
+        const hits = map.queryRenderedFeatures(bbox, { layers: ['route-hit-area'] });
+        if (hits.length > 0) {
+          onAnchorInsertRef.current({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+          return;
+        }
+      }
+
       onMapClickRef.current?.({ lat: e.lngLat.lat, lng: e.lngLat.lng });
     });
 
@@ -802,6 +1022,42 @@ export default function RouteMap({
     });
 
     map.on('mouseleave', 'obvitnas-fill', () => {
+      map.getCanvas().style.cursor = '';
+      hoverPopup.remove();
+    });
+
+    map.on('mousemove', 'route-hit-area', () => {
+      if (
+        routeModeRef.current === 'random' &&
+        editableAnchorsRef.current.length >= 2 &&
+        onAnchorInsertRef.current
+      ) {
+        map.getCanvas().style.cursor = 'copy';
+      }
+    });
+
+    map.on('mouseleave', 'route-hit-area', () => {
+      if (routeModeRef.current === 'random') {
+        map.getCanvas().style.cursor = '';
+      }
+    });
+
+    map.on('mousemove', 'route-signals-circle', (e: maplibregl.MapLayerMouseEvent) => {
+      const feat = e.features?.[0];
+      if (!feat) return;
+      map.getCanvas().style.cursor = 'pointer';
+      hoverPopup
+        .setLngLat(e.lngLat)
+        .setHTML(
+          `<div class="text-[11px] font-bold text-slate-900 dark:text-slate-100 leading-tight">
+            Lampu Lalu Lintas
+            <span class="block text-[9px] font-normal text-slate-500 dark:text-slate-400">Simpang bersinyal di sepanjang rute</span>
+          </div>`
+        )
+        .addTo(map);
+    });
+
+    map.on('mouseleave', 'route-signals-circle', () => {
       map.getCanvas().style.cursor = '';
       hoverPopup.remove();
     });
@@ -882,19 +1138,31 @@ export default function RouteMap({
     }
   }, [routeMode, waypoints]);
 
-  // Update gradient polyline + direction arrow source
+  // Update ghost hover-peek route immediately when hovering candidates
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const peekSrc = map.getSource('route-peek') as GeoJSONSource | undefined;
+    peekSrc?.setData(buildFullRouteLineGeoJson(peekRouteData));
+  }, [peekRouteData]);
+
+  // Update gradient polyline + direction arrow + connector + signal markers
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const segSrc = map.getSource('route-segments') as GeoJSONSource | undefined;
     const fullSrc = map.getSource('route-full-line') as GeoJSONSource | undefined;
+    const connSrc = map.getSource('route-start-connector') as GeoJSONSource | undefined;
+    const sigSrc = map.getSource('route-signals') as GeoJSONSource | undefined;
     if (segSrc && fullSrc) {
       segSrc.setData(buildRouteGeoJson(routeData));
       fullSrc.setData(buildFullRouteLineGeoJson(routeData));
+      connSrc?.setData(buildStartConnectorGeoJson(requestedStartLocation, routeData));
+      sigSrc?.setData(buildSignalsGeoJson(routeData));
     } else if (map.isStyleLoaded()) {
       ensureCustomLayers(map);
     }
-  }, [routeData, ensureCustomLayers]);
+  }, [routeData, requestedStartLocation, ensureCustomLayers]);
 
   const zoomBucket = Math.floor(zoomLevel * 2) / 2;
 
@@ -939,6 +1207,101 @@ export default function RouteMap({
     waypointMarkersRef.current = [];
 
     if (!map) return;
+
+    const isRandomEditable =
+      routeMode === 'random' &&
+      editableAnchors.length >= 2 &&
+      routeData &&
+      routeData.coordinates.length >= 2;
+
+    if (isRandomEditable) {
+      const lastIdx = editableAnchors.length - 1;
+      const endsMeet =
+        haversineDistance(editableAnchors[0], editableAnchors[lastIdx]) < 0.025;
+
+      editableAnchors.forEach((anchor, idx) => {
+        if (endsMeet && idx === lastIdx && lastIdx > 0) {
+          return;
+        }
+
+        const isStart = idx === 0;
+        const el = document.createElement('div');
+        el.setAttribute('role', 'button');
+
+        if (isStart) {
+          el.className = 'custom-pin-closed';
+          el.textContent = 'S / F';
+          el.title = 'Titik Start & Finish • Geser untuk memindahkan start rute';
+        } else {
+          el.className = 'custom-pin-waypoint';
+          el.textContent = '';
+          el.title = `Anchor #${idx} • Geser untuk mengubah jalur atau klik untuk hapus`;
+        }
+
+        const marker = new maplibregl.Marker({
+          element: el,
+          draggable: Boolean(isStart ? onAnchorDrag || onWaypointDrag : onAnchorDrag),
+          anchor: 'center',
+        })
+          .setLngLat([anchor.lng, anchor.lat])
+          .addTo(map);
+
+        marker.on('dragend', () => {
+          const pos = marker.getLngLat();
+          const latlng = { lat: pos.lat, lng: pos.lng };
+          if (onAnchorDrag) {
+            onAnchorDrag(idx, latlng);
+          } else if (isStart && onWaypointDrag) {
+            onWaypointDrag(0, latlng);
+          }
+        });
+
+        if (!isStart && onAnchorDelete && editableAnchors.length > 3) {
+          el.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            activePopupRef.current?.remove();
+            onAnchorDelete(idx);
+          });
+
+          el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            activePopupRef.current?.remove();
+
+            const popupDiv = document.createElement('div');
+            popupDiv.className = 'text-center font-sans min-w-[140px]';
+            popupDiv.innerHTML = `
+              <div class="text-[11px] font-bold text-slate-900 dark:text-slate-100 mb-0.5">Titik Anchor #${idx}</div>
+              <div class="text-[10px] text-slate-500 dark:text-slate-400 mb-2">Geser untuk ubah lekukan rute</div>
+              <button class="w-full px-2.5 py-1 bg-[#fc4c02] hover:bg-[#e34402] active:scale-95 text-white font-bold text-[10px] rounded-lg transition shadow-sm">
+                Hapus Anchor
+              </button>
+            `;
+
+            const deleteBtn = popupDiv.querySelector('button');
+            deleteBtn?.addEventListener('click', (ev) => {
+              ev.stopPropagation();
+              popup.remove();
+              activePopupRef.current = null;
+              onAnchorDelete(idx);
+            });
+
+            const popup = new maplibregl.Popup({
+              closeButton: false,
+              offset: 16,
+            })
+              .setLngLat([anchor.lng, anchor.lat])
+              .setDOMContent(popupDiv)
+              .addTo(map);
+
+            activePopupRef.current = popup;
+          });
+        }
+
+        waypointMarkersRef.current.push(marker);
+      });
+      return;
+    }
 
     const isClosedManualLoop =
       waypoints.length > 2 &&
@@ -1045,7 +1408,16 @@ export default function RouteMap({
 
       waypointMarkersRef.current.push(marker);
     });
-  }, [waypoints, routeData, routeMode, onWaypointDrag, onWaypointDelete]);
+  }, [
+    waypoints,
+    routeData,
+    routeMode,
+    editableAnchors,
+    onWaypointDrag,
+    onWaypointDelete,
+    onAnchorDrag,
+    onAnchorDelete,
+  ]);
 
   // Live User GPS Location Pulsing Blue Beacon
   useEffect(() => {
