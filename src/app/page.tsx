@@ -32,9 +32,9 @@ import SavedRoutesModal from '@/components/UI/SavedRoutesModal';
 const RouteMap = dynamic(() => import('@/components/Map/RouteMap'), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full flex flex-col items-center justify-center bg-[#f4f3ef] text-slate-700 gap-3">
-      <div className="w-10 h-10 border-4 border-[#fc4c02] border-t-transparent rounded-full animate-spin" />
-      <span className="text-sm font-bold text-slate-700">
+    <div className="w-full h-full flex flex-col items-center justify-center bg-[#f1f5f9] dark:bg-[#0f172a] text-slate-700 dark:text-slate-200 gap-3">
+      <div className="w-10 h-10 border-[3px] border-[#fc4c02] border-t-transparent rounded-full animate-spin" />
+      <span className="text-sm font-bold text-slate-700 dark:text-slate-200">
         Memuat Peta Strava Style &amp; Engine Routing (100% Free)...
       </span>
     </div>
@@ -596,7 +596,7 @@ export default function HomePage() {
   return (
     <main
       className={`relative w-screen h-screen overflow-hidden flex ${
-        theme === 'dark' ? 'dark bg-[#0f172a]' : 'bg-[#f4f3ef]'
+        theme === 'dark' ? 'dark bg-[#0f172a]' : 'bg-[#f1f5f9]'
       }`}
     >
       {/* Search Location Bar (Centered cleanly inside unobstructed map canvas) */}
@@ -667,7 +667,7 @@ export default function HomePage() {
       {/* Floating Metrics HUD (Desktop) */}
       <div className="hidden md:block absolute right-4 bottom-4 md:bottom-6 z-30 md:max-w-[300px] lg:max-w-sm w-full space-y-3 pointer-events-none">
         {showElevation && activeRouteData && (
-          <div className="pointer-events-auto animate-in slide-in-from-bottom-3 fade-in duration-200">
+          <div className="pointer-events-auto ui-fade-slide-up">
             <ElevationProfile
               profile={activeRouteData.elevationProfile}
               gainM={activeRouteData.elevationGainM}
@@ -695,7 +695,7 @@ export default function HomePage() {
 
       {/* Mobile Floating Elevation Profile (Compact, directly above docked mobile bar) */}
       {showElevation && activeRouteData && (
-        <div className="md:hidden absolute inset-x-3 bottom-[76px] z-30 pointer-events-auto animate-in slide-in-from-bottom-2 fade-in">
+        <div className="md:hidden absolute inset-x-3 bottom-[78px] z-30 pointer-events-auto ui-fade-slide-up">
           <ElevationProfile
             profile={activeRouteData.elevationProfile}
             gainM={activeRouteData.elevationGainM}

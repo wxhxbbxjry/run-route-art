@@ -34,7 +34,7 @@ export default function ElevationProfile({
 
   if (!profile || profile.length < 2) {
     return (
-      <div className="p-3 text-center text-xs text-slate-500 dark:text-slate-400 strava-card rounded-xl font-medium">
+      <div className="p-3 text-center text-xs text-slate-600 dark:text-slate-400 strava-card rounded-2xl font-medium">
         Tambahkan waypoint untuk melihat profil elevasi rute.
       </div>
     );
@@ -103,34 +103,38 @@ export default function ElevationProfile({
   const displayElevation = (m: number) =>
     isMiles ? `${metersToFeet(m)} ft` : `${m} m`;
 
+  const hoverY = hoverData
+    ? height - paddingY - ((hoverData.elevationM - minEle) / eleSpan) * (height - 2 * paddingY)
+    : 0;
+
   return (
     <div className="strava-card p-3.5 rounded-2xl space-y-2.5 text-slate-900 dark:text-slate-100">
       {/* Header with stats */}
       <div className="flex items-center justify-between text-xs gap-2">
-        <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-100">
+        <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-100 min-w-0">
           <Mountain className="w-4 h-4 text-[#fc4c02] shrink-0" />
-          <span>Profil Elevasi</span>
+          <span className="whitespace-nowrap">Profil Elevasi</span>
           {hoverData && (
-            <span className="text-[10px] text-[#c93b00] dark:text-orange-300 font-mono font-bold bg-orange-50 dark:bg-orange-950/60 px-2 py-0.5 rounded border border-orange-200 dark:border-orange-500/40">
+            <span className="text-[10px] text-[#c93b00] dark:text-orange-300 font-mono font-bold bg-orange-50 dark:bg-orange-950/60 px-2 py-0.5 rounded-lg border border-orange-200 dark:border-orange-500/40 tabular-nums whitespace-nowrap ui-fade-slide-up">
               {displayDist(hoverData.distKm)} &bull; {displayElevation(hoverData.elevationM)}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2.5 text-[11px] shrink-0">
+        <div className="flex items-center gap-2 text-[11px] shrink-0 tabular-nums">
           <span className="flex items-center gap-0.5 text-emerald-700 dark:text-emerald-400 font-bold">
             <ArrowUpRight className="w-3.5 h-3.5" /> +{isMiles ? metersToFeet(gainM) + 'ft' : gainM + 'm'}
           </span>
           <span className="flex items-center gap-0.5 text-rose-600 dark:text-rose-400 font-bold">
             <ArrowDownRight className="w-3.5 h-3.5" /> -{isMiles ? metersToFeet(lossM) + 'ft' : lossM + 'm'}
           </span>
-          <span className="text-slate-500 dark:text-slate-400 font-mono">
-            {displayElevation(minEle)} &ndash; {displayElevation(maxEle)}
+          <span className="text-slate-500 dark:text-slate-400 font-mono hidden sm:inline">
+            {displayElevation(minEle)}&ndash;{displayElevation(maxEle)}
           </span>
         </div>
       </div>
 
       {/* Interactive Strava-Style Elevation Chart */}
-      <div className="relative w-full overflow-hidden rounded-xl bg-slate-50 dark:bg-slate-800/80 p-1.5 border border-slate-200 dark:border-slate-700 cursor-crosshair">
+      <div className="relative w-full overflow-hidden rounded-xl bg-slate-50 dark:bg-slate-800/80 p-1.5 border border-slate-200 dark:border-slate-700 hover:border-orange-300 dark:hover:border-orange-500/40 transition-colors duration-150 cursor-crosshair">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${width} ${height}`}
@@ -167,17 +171,20 @@ export default function ElevationProfile({
                 y1={0}
                 x2={hoverData.x}
                 y2={height}
-                className="stroke-slate-800 dark:stroke-slate-100"
-                strokeWidth="1.5"
+                className="stroke-slate-700 dark:stroke-slate-200"
+                strokeWidth="1.25"
                 strokeDasharray="3,3"
               />
               <circle
                 cx={hoverData.x}
-                cy={
-                  height -
-                  paddingY -
-                  ((hoverData.elevationM - minEle) / eleSpan) * (height - 2 * paddingY)
-                }
+                cy={hoverY}
+                r="8"
+                fill="#fc4c02"
+                fillOpacity="0.22"
+              />
+              <circle
+                cx={hoverData.x}
+                cy={hoverY}
                 r="4.5"
                 fill="#fc4c02"
                 stroke="#ffffff"
@@ -197,7 +204,7 @@ export default function ElevationProfile({
           />
         </svg>
 
-        <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono font-medium px-1.5 mt-1">
+        <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono font-medium px-1.5 mt-1 tabular-nums">
           <span>0 {unitSystem} (Start)</span>
           <span>{displayDist(distanceKm / 2)}</span>
           <span>{displayDist(distanceKm)} (Finish)</span>

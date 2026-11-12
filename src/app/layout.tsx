@@ -1,5 +1,20 @@
 import type { Metadata, Viewport } from 'next';
+import localFont from 'next/font/local';
 import './globals.css';
+
+const geistSans = localFont({
+  src: './fonts/GeistVF.woff',
+  variable: '--font-geist-sans',
+  weight: '100 900',
+  display: 'swap',
+});
+
+const geistMono = localFont({
+  src: './fonts/GeistMonoVF.woff',
+  variable: '--font-geist-mono',
+  weight: '100 900',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'RunRoute PRO | Smart Running Route & Random Loop Planner',
@@ -35,14 +50,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="id">
+    <html lang="id" className={`${geistSans.variable} ${geistMono.variable}`}>
       <head>
         <link rel="preconnect" href="https://tiles.openfreemap.org" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://tiles.openfreemap.org" />
         <link rel="preconnect" href="https://valhalla1.openstreetmap.de" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://router.project-osrm.org" crossOrigin="anonymous" />
       </head>
-      <body className="antialiased bg-[#f4f3ef] text-slate-900 overflow-hidden w-screen h-screen">
+      <body className="font-sans antialiased bg-[#f1f5f9] text-slate-900 overflow-hidden w-screen h-screen">
         {children}
       </body>
     </html>

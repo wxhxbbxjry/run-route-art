@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { RouteData } from '@/lib/types';
 import { generateGpx, generateGeoJson, downloadFile } from '@/lib/gpx';
 import { calculatePaceTime } from '@/lib/geo';
@@ -32,6 +32,15 @@ export default function ExportModal({
 
   const [copied, setCopied] = useState(false);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const timeInfo = calculatePaceTime(routeData.distanceKm, paceSeconds);
@@ -56,8 +65,16 @@ export default function ExportModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-5 shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="export-modal-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 dark:bg-black/75 backdrop-blur-sm transition-opacity duration-200"
+    >
+      <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-5 shadow-2xl space-y-4 text-slate-900 dark:text-slate-100 ui-modal-enter">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
           <div className="flex items-center gap-2.5">
@@ -65,13 +82,17 @@ export default function ExportModal({
               <Download className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-black text-slate-900 dark:text-white">Ekspor Rute Lari</h3>
+              <h3 id="export-modal-title" className="text-base font-black text-slate-900 dark:text-white">
+                Ekspor Rute Lari
+              </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">Siap sinkron ke Strava, Garmin, Coros</p>
             </div>
           </div>
           <button
+            type="button"
+            aria-label="Tutup dialog ekspor"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            className="p-1.5 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 ui-btn-secondary ui-focus-ring"
           >
             <X className="w-5 h-5" />
           </button>
@@ -79,18 +100,21 @@ export default function ExportModal({
 
         {/* Route Name Input */}
         <div className="space-y-1.5">
-          <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Nama Aktivitas / Rute</label>
+          <label htmlFor="export-route-name" className="text-xs font-bold text-slate-700 dark:text-slate-300">
+            Nama Aktivitas / Rute
+          </label>
           <input
+            id="export-route-name"
             type="text"
             value={routeName}
             onChange={(e) => setRouteName(e.target.value)}
-            className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-sm font-medium focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:border-[#fc4c02] transition"
+            className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-sm font-medium focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:border-[#fc4c02] focus:ring-2 focus:ring-[#fc4c02]/20 transition-all duration-150"
             placeholder="Contoh: Lari Pagi 10K Senayan"
           />
         </div>
 
         {/* Summary Card */}
-        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 grid grid-cols-3 gap-2 text-center text-xs">
+        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 grid grid-cols-3 gap-2 text-center text-xs tabular-nums">
           <div>
             <span className="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold">Jarak</span>
             <p className="font-mono font-black text-[#fc4c02] text-sm mt-0.5">
@@ -114,11 +138,12 @@ export default function ExportModal({
         {/* Export Formats */}
         <div className="space-y-2 pt-1">
           <button
+            type="button"
             onClick={handleDownloadGpx}
-            className="w-full py-3 px-4 rounded-xl bg-[#fc4c02] hover:bg-[#e34402] text-white font-bold text-xs flex items-center justify-between shadow-[0_6px_18px_rgba(252,76,2,0.3)] transition active:scale-[0.98]"
+            className="group w-full py-3 px-4 rounded-xl bg-[#fc4c02] hover:bg-[#e34402] text-white font-bold text-xs flex items-center justify-between ui-btn-primary ui-focus-ring"
           >
             <div className="flex items-center gap-2.5">
-              <Download className="w-4 h-4" />
+              <Download className="w-4 h-4 transition-transform duration-150 group-hover:translate-y-0.5" />
               <div className="text-left">
                 <p className="leading-tight">Download File .GPX (Standar)</p>
                 <p className="text-[10px] text-orange-100 font-normal">
@@ -126,17 +151,18 @@ export default function ExportModal({
                 </p>
               </div>
             </div>
-            <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-black/15">
+            <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-lg bg-black/15">
               .GPX
             </span>
           </button>
 
           <button
+            type="button"
             onClick={handleDownloadGeoJson}
-            className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-semibold text-xs flex items-center justify-between transition active:scale-[0.98]"
+            className="group w-full py-2.5 px-4 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:border-orange-300 dark:hover:border-orange-500/40 font-semibold text-xs flex items-center justify-between ui-card-hover ui-focus-ring"
           >
             <div className="flex items-center gap-2.5">
-              <FileCode className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+              <FileCode className="w-4 h-4 text-sky-600 dark:text-sky-400 transition-transform duration-150 group-hover:scale-110" />
               <div className="text-left">
                 <p className="leading-tight">Download File .GeoJSON / .JSON</p>
                 <p className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">
@@ -144,16 +170,21 @@ export default function ExportModal({
                 </p>
               </div>
             </div>
-            <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+            <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-lg bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
               .GEOJSON
             </span>
           </button>
 
           <button
+            type="button"
             onClick={handleCopyGpx}
-            className="w-full py-2 px-3 rounded-lg text-slate-600 dark:text-slate-300 hover:text-[#fc4c02] hover:bg-orange-50 dark:hover:bg-slate-800 text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+            className="w-full py-2 px-3 rounded-xl text-slate-600 dark:text-slate-300 hover:text-[#fc4c02] dark:hover:text-orange-300 hover:bg-orange-50/80 dark:hover:bg-slate-800 text-xs font-semibold flex items-center justify-center gap-1.5 ui-btn-secondary ui-focus-ring"
           >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? (
+              <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 ui-fade-slide-up" />
+            ) : (
+              <Copy className="w-3.5 h-3.5" />
+            )}
             <span>{copied ? 'Teks GPX berhasil disalin!' : 'Salin isi GPX ke Clipboard'}</span>
           </button>
         </div>
