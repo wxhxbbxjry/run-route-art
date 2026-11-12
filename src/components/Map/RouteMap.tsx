@@ -38,6 +38,7 @@ interface RouteMapProps {
   editableAnchors?: LatLng[];
   requestedStartLocation?: LatLng | null;
   routeMode: RouteMode;
+  isManualLocked?: boolean;
   selectedTile: TileLayerId;
   unitSystem?: UnitSystem;
   fitTrigger?: number;
@@ -241,6 +242,7 @@ export default function RouteMap({
   editableAnchors = [],
   requestedStartLocation = null,
   routeMode,
+  isManualLocked = false,
   selectedTile,
   unitSystem = 'km',
   fitTrigger = 0,
@@ -275,6 +277,7 @@ export default function RouteMap({
   const requestedStartLocationRef = useRef(requestedStartLocation);
   const waypointsRef = useRef(waypoints);
   const routeModeRef = useRef(routeMode);
+  const isManualLockedRef = useRef(isManualLocked);
   const selectedTileRef = useRef(selectedTile);
   const showLayerPickerRef = useRef(false);
   const showHeatmapRef = useRef(false);
@@ -324,6 +327,10 @@ export default function RouteMap({
   useEffect(() => {
     routeModeRef.current = routeMode;
   }, [routeMode]);
+
+  useEffect(() => {
+    isManualLockedRef.current = isManualLocked;
+  }, [isManualLocked]);
 
   useEffect(() => {
     selectedTileRef.current = selectedTile;
@@ -853,7 +860,11 @@ export default function RouteMap({
 
     // Live dashed preview line from last manual waypoint to mouse cursor
     map.on('mousemove', (e: maplibregl.MapMouseEvent) => {
-      if (routeModeRef.current !== 'manual' || waypointsRef.current.length === 0) {
+      if (
+        routeModeRef.current !== 'manual' ||
+        isManualLockedRef.current ||
+        waypointsRef.current.length === 0
+      ) {
         return;
       }
       const lastWp = waypointsRef.current[waypointsRef.current.length - 1];
@@ -1018,15 +1029,15 @@ export default function RouteMap({
     }
   }, [unitSystem]);
 
-  // Clear preview line when mode switches or waypoints clear
+  // Clear preview line when mode switches, manual route closes, or waypoints clear
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    if (routeMode !== 'manual' || waypoints.length === 0) {
+    if (routeMode !== 'manual' || isManualLocked || waypoints.length === 0) {
       const previewSrc = map.getSource('route-preview') as GeoJSONSource | undefined;
       previewSrc?.setData(buildPreviewGeoJson(null, null));
     }
-  }, [routeMode, waypoints]);
+  }, [routeMode, isManualLocked, waypoints]);
 
   // Update gradient polyline + direction arrow + connector
   useEffect(() => {
@@ -1221,22 +1232,24 @@ export default function RouteMap({
         el.title = `Waypoint #${idx + 1} • Geser untuk ubah jalur atau klik untuk hapus`;
       }
 
+      const isManualEditBlocked = routeMode === 'manual' && isManualLocked;
+
       const marker = new maplibregl.Marker({
         element: el,
-        draggable: !!onWaypointDrag,
+        draggable: Boolean(onWaypointDrag && !isManualEditBlocked),
         anchor: 'center',
       })
         .setLngLat([wp.lng, wp.lat])
         .addTo(map);
 
-      if (onWaypointDrag) {
+      if (onWaypointDrag && !isManualEditBlocked) {
         marker.on('dragend', () => {
           const pos = marker.getLngLat();
           onWaypointDrag(idx, { lat: pos.lat, lng: pos.lng });
         });
       }
 
-      if (onWaypointDelete && routeMode === 'manual') {
+      if (onWaypointDelete && routeMode === 'manual' && !isManualEditBlocked) {
         el.addEventListener('contextmenu', (e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -1292,6 +1305,7 @@ export default function RouteMap({
     waypoints,
     routeData,
     routeMode,
+    isManualLocked,
     editableAnchors,
     onWaypointDrag,
     onWaypointDelete,
@@ -1501,7 +1515,9 @@ export default function RouteMap({
       {/* MapLibre Strava Style Container */}
       <div
         ref={mapContainerRef}
-        className={`w-full h-full z-0 ${routeMode === 'manual' ? 'manual-cursor-mode' : ''}`}
+        className={`w-full h-full z-0 ${
+          routeMode === 'manual' && !isManualLocked ? 'manual-cursor-mode' : ''
+        }`}
       />
 
       {/* Right Floating Map Controls Dock (44px+ WCAG touch targets) */}

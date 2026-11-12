@@ -11,11 +11,15 @@ import {
   Zap,
   CheckCircle2,
   ArrowLeftRight,
+  Pencil,
 } from 'lucide-react';
 
 interface ManualModeProps {
   waypoints: Waypoint[];
   routeData: RouteData | null;
+  isRouteClosed: boolean;
+  onFinishRoute: () => void;
+  onReopenRoute: () => void;
   onUndo: () => void;
   onRedo?: () => void;
   canRedo?: boolean;
@@ -29,6 +33,9 @@ interface ManualModeProps {
 export default function ManualMode({
   waypoints,
   routeData,
+  isRouteClosed,
+  onFinishRoute,
+  onReopenRoute,
   onUndo,
   onRedo,
   canRedo = false,
@@ -47,7 +54,9 @@ export default function ManualMode({
     <div className="space-y-3.5 ui-fade-slide-up">
       {/* Concise usage tip */}
       <p className="text-xs text-[var(--text-secondary)] leading-relaxed px-0.5">
-        Ketuk peta untuk membuat titik rute, seret titik untuk ubah jalur, atau klik titik untuk menghapus.
+        {isRouteClosed
+          ? 'Pemilihan rute selesai. Peta bebas digeser tanpa menambah titik — ekspor GPX atau lanjutkan edit kapan saja.'
+          : 'Ketuk peta untuk membuat titik rute, seret titik untuk ubah jalur, atau klik titik untuk menghapus.'}
       </p>
 
       {/* Active Route Summary Card */}
@@ -59,9 +68,11 @@ export default function ManualMode({
               className={`w-2.5 h-2.5 rounded-full shrink-0 transition-colors duration-200 ${
                 isLoading
                   ? 'bg-[#fc4c02] animate-ping'
+                  : isRouteClosed
+                  ? 'bg-emerald-400'
                   : waypoints.length > 0
                   ? 'bg-[#fc4c02]'
-                  : 'bg-slate-300 dark:bg-slate-600'
+                  : 'bg-slate-600'
               }`}
             />
             <span className="text-xs font-bold text-[var(--text-primary)] tabular-nums truncate">
@@ -71,12 +82,20 @@ export default function ManualMode({
             </span>
           </div>
 
-          {isLoopClosed && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold shrink-0 bg-[var(--status-ok-bg)] text-[var(--status-ok-text)] border border-[var(--status-ok-border)] ui-fade-slide-up">
-              <CheckCircle2 className="w-3 h-3" aria-hidden="true" />
-              <span>Loop Tertutup</span>
-            </span>
-          )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {isRouteClosed && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-[var(--status-ok-bg)] text-[var(--status-ok-text)] border border-[var(--status-ok-border)] ui-fade-slide-up">
+                <CheckCircle2 className="w-3 h-3" aria-hidden="true" />
+                <span>Rute Selesai</span>
+              </span>
+            )}
+            {isLoopClosed && !isRouteClosed && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-[var(--status-ok-bg)] text-[var(--status-ok-text)] border border-[var(--status-ok-border)] ui-fade-slide-up">
+                <CheckCircle2 className="w-3 h-3" aria-hidden="true" />
+                <span>Loop Tertutup</span>
+              </span>
+            )}
+          </div>
         </div>
 
         {routeData && (
@@ -94,12 +113,41 @@ export default function ManualMode({
         )}
       </div>
 
+      {/* Finish / Reopen Manual Route CTA */}
+      {isRouteClosed ? (
+        <button
+          type="button"
+          onClick={onReopenRoute}
+          className="group w-full min-h-[46px] py-2.5 px-4 rounded-xl bg-[var(--surface-solid)] hover:bg-[var(--brand-tint)] text-[var(--text-primary)] hover:text-[var(--brand-ink)] border border-[var(--border-strong)] hover:border-[var(--brand-border)] font-bold text-sm flex items-center justify-center gap-2 ui-btn-secondary ui-focus-ring"
+        >
+          <Pencil
+            className="w-4 h-4 text-[#fc4c02] transition-transform duration-150 group-hover:-rotate-12"
+            aria-hidden="true"
+          />
+          <span>Lanjutkan Edit</span>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={onFinishRoute}
+          disabled={waypoints.length < 2}
+          title="Selesaikan pemilihan titik agar peta bebas digeser tanpa menambah titik baru"
+          className="group w-full min-h-[46px] py-2.5 px-4 rounded-xl bg-[#fc4c02] hover:bg-[#e34402] text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40 disabled:pointer-events-none ui-btn-primary ui-focus-ring"
+        >
+          <CheckCircle2
+            className="w-4 h-4 transition-transform duration-150 group-hover:scale-110"
+            aria-hidden="true"
+          />
+          <span>Tutup Rute</span>
+        </button>
+      )}
+
       {/* Action Buttons Grid (44px mobile hit targets) */}
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
           onClick={onUndo}
-          disabled={waypoints.length === 0 || isLoading}
+          disabled={waypoints.length === 0 || isRouteClosed || isLoading}
           className="group min-h-[44px] md:min-h-[40px] px-3 py-2 rounded-xl bg-[var(--surface-solid)] hover:bg-[var(--surface-well)] text-[var(--text-primary)] border border-[var(--border-subtle)] hover:border-[var(--border-strong)] font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:pointer-events-none ui-btn-secondary ui-focus-ring"
         >
           <Undo2
@@ -112,7 +160,7 @@ export default function ManualMode({
         <button
           type="button"
           onClick={onRedo}
-          disabled={!canRedo || isLoading}
+          disabled={!canRedo || isRouteClosed || isLoading}
           className="group min-h-[44px] md:min-h-[40px] px-3 py-2 rounded-xl bg-[var(--surface-solid)] hover:bg-[var(--surface-well)] text-[var(--text-primary)] border border-[var(--border-subtle)] hover:border-[var(--border-strong)] font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:pointer-events-none ui-btn-secondary ui-focus-ring"
         >
           <Redo2
@@ -125,7 +173,7 @@ export default function ManualMode({
         <button
           type="button"
           onClick={onOutAndBack}
-          disabled={waypoints.length < 2 || isLoopClosed || isLoading}
+          disabled={waypoints.length < 2 || isLoopClosed || isRouteClosed || isLoading}
           title="Gandakan rute kembali ke titik start (Out & Back)"
           className="group min-h-[44px] md:min-h-[40px] px-3 py-2 rounded-xl bg-[var(--brand-tint)] hover:bg-orange-500/20 text-[var(--brand-ink)] border border-[var(--brand-border)] font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:pointer-events-none ui-btn-secondary ui-focus-ring"
         >
@@ -139,7 +187,7 @@ export default function ManualMode({
         <button
           type="button"
           onClick={onCloseLoop}
-          disabled={waypoints.length < 2 || isLoopClosed || isLoading}
+          disabled={waypoints.length < 2 || isLoopClosed || isRouteClosed || isLoading}
           className="group min-h-[44px] md:min-h-[40px] px-3 py-2 rounded-xl bg-[var(--surface-solid)] hover:bg-[var(--surface-well)] text-[var(--text-primary)] border border-[var(--border-subtle)] hover:border-[var(--border-strong)] font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:pointer-events-none ui-btn-secondary ui-focus-ring"
         >
           <Repeat

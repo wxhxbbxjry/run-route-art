@@ -17,6 +17,7 @@ import {
   FolderOpen,
   Undo2,
   Download,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -25,6 +26,9 @@ interface SidebarProps {
   // Manual mode props
   waypoints: Waypoint[];
   routeData: RouteData | null;
+  isManualRouteClosed?: boolean;
+  onFinishManualRoute?: () => void;
+  onReopenManualRoute?: () => void;
   onUndoWaypoint: () => void;
   onRedoWaypoint?: () => void;
   canRedo?: boolean;
@@ -56,6 +60,9 @@ export default function Sidebar({
   onModeChange,
   waypoints,
   routeData,
+  isManualRouteClosed = false,
+  onFinishManualRoute,
+  onReopenManualRoute,
   onUndoWaypoint,
   onRedoWaypoint,
   canRedo,
@@ -573,6 +580,9 @@ export default function Sidebar({
               key="manual-panel"
               waypoints={waypoints}
               routeData={routeData}
+              isRouteClosed={isManualRouteClosed}
+              onFinishRoute={onFinishManualRoute || (() => {})}
+              onReopenRoute={onReopenManualRoute || (() => {})}
               onUndo={onUndoWaypoint}
               onRedo={onRedoWaypoint}
               canRedo={canRedo}
@@ -674,13 +684,23 @@ export default function Sidebar({
                       {unitLabel}
                     </span>
                   </div>
-                  <p className="text-[11px] text-[var(--text-muted)] font-semibold truncate mt-0.5">
-                    {currentMode === 'random' ? 'Random Loop' : 'Manual Tap'}
+                  <p
+                    className={`text-[11px] font-semibold truncate mt-0.5 ${
+                      currentMode === 'manual' && isManualRouteClosed
+                        ? 'text-[var(--status-ok-text)]'
+                        : 'text-[var(--text-muted)]'
+                    }`}
+                  >
+                    {currentMode === 'random'
+                      ? 'Random Loop'
+                      : isManualRouteClosed
+                      ? 'Rute Selesai'
+                      : 'Manual Tap'}
                   </p>
                 </div>
               </button>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0">
                 {currentMode === 'manual' && !hasExportableRoute && (
                   <button
                     type="button"
@@ -694,13 +714,32 @@ export default function Sidebar({
                   </button>
                 )}
 
+                {currentMode === 'manual' &&
+                  hasExportableRoute &&
+                  !isManualRouteClosed &&
+                  onFinishManualRoute && (
+                    <button
+                      type="button"
+                      onClick={onFinishManualRoute}
+                      aria-label="Tutup Rute (Selesaikan Pemilihan)"
+                      title="Tutup Rute (Selesaikan Pemilihan)"
+                      className="w-11 h-11 rounded-xl bg-[#fc4c02] hover:bg-[#e34402] text-white flex items-center justify-center ui-btn-primary ui-focus-ring"
+                    >
+                      <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
+                    </button>
+                  )}
+
                 {hasExportableRoute && onOpenExport && (
                   <button
                     type="button"
                     onClick={onOpenExport}
                     aria-label="Ekspor GPX atau JSON"
                     title="Ekspor GPX / JSON"
-                    className="w-11 h-11 rounded-xl bg-[#fc4c02] hover:bg-[#e34402] text-white flex items-center justify-center ui-btn-primary ui-focus-ring"
+                    className={`w-11 h-11 rounded-xl flex items-center justify-center ui-focus-ring ${
+                      currentMode === 'manual' && !isManualRouteClosed
+                        ? 'bg-[var(--surface-well)] hover:bg-[var(--brand-tint)] text-[var(--text-primary)] border border-[var(--border-subtle)] ui-btn-secondary'
+                        : 'bg-[#fc4c02] hover:bg-[#e34402] text-white ui-btn-primary'
+                    }`}
                   >
                     <Download className="w-4 h-4" aria-hidden="true" />
                   </button>
@@ -712,10 +751,16 @@ export default function Sidebar({
                     onClick={onOpenSavedRoutes}
                     aria-label="Kelola Rute & Impor GPX"
                     title="Kelola Rute & Impor GPX"
-                    className="min-h-[44px] px-2.5 rounded-xl bg-[var(--brand-tint)] text-[var(--brand-ink)] border border-[var(--brand-border)] text-xs font-bold flex items-center gap-1 whitespace-nowrap ui-btn-secondary ui-focus-ring"
+                    className={`min-h-[44px] rounded-xl bg-[var(--brand-tint)] text-[var(--brand-ink)] border border-[var(--brand-border)] text-xs font-bold flex items-center justify-center gap-1 whitespace-nowrap ui-btn-secondary ui-focus-ring ${
+                      currentMode === 'manual' && hasExportableRoute && !isManualRouteClosed
+                        ? 'w-11'
+                        : 'px-2.5'
+                    }`}
                   >
                     <FolderOpen className="w-3.5 h-3.5 text-[#fc4c02]" aria-hidden="true" />
-                    <span>Rute</span>
+                    {!(currentMode === 'manual' && hasExportableRoute && !isManualRouteClosed) && (
+                      <span>Rute</span>
+                    )}
                   </button>
                 )}
 
@@ -803,6 +848,9 @@ export default function Sidebar({
               <ManualMode
                 waypoints={waypoints}
                 routeData={routeData}
+                isRouteClosed={isManualRouteClosed}
+                onFinishRoute={onFinishManualRoute || (() => {})}
+                onReopenRoute={onReopenManualRoute || (() => {})}
                 onUndo={onUndoWaypoint}
                 onRedo={onRedoWaypoint}
                 canRedo={canRedo}

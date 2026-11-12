@@ -80,6 +80,7 @@ export default function HomePage() {
   const [manualWaypoints, setManualWaypoints] = useState<Waypoint[]>([]);
   const [manualRouteData, setManualRouteData] = useState<RouteData | null>(null);
   const [manualRedoStack, setManualRedoStack] = useState<Waypoint[][]>([]);
+  const [isManualRouteClosed, setIsManualRouteClosed] = useState<boolean>(false);
   const manualWaypointsRef = useRef<Waypoint[]>([]);
   const manualRouteSeqRef = useRef<number>(0);
 
@@ -292,6 +293,10 @@ export default function HomePage() {
     async (clickedLatLng: LatLng) => {
       hasUserMapInteractionRef.current = true;
 
+      if (currentMode === 'manual' && isManualRouteClosed) {
+        return;
+      }
+
       // Check Objek Vital Nasional violation
       const obvCheck = checkObvitnasViolation(clickedLatLng);
       let effectiveLatLng = clickedLatLng;
@@ -327,7 +332,14 @@ export default function HomePage() {
         setLoopStartLocation(effectiveLatLng);
       }
     },
-    [currentMode, commitManualWaypoints, recomputeManualRoute, cancelAllGeneratorWork, addToast]
+    [
+      currentMode,
+      isManualRouteClosed,
+      commitManualWaypoints,
+      recomputeManualRoute,
+      cancelAllGeneratorWork,
+      addToast,
+    ]
   );
 
   // Generator: Generate 1 highest-accuracy Car/Motor compliant loop route
@@ -683,6 +695,10 @@ export default function HomePage() {
     async (index: number, newPos: LatLng) => {
       hasUserMapInteractionRef.current = true;
 
+      if (currentMode === 'manual' && isManualRouteClosed) {
+        return;
+      }
+
       // Check Objek Vital Nasional violation
       const obvCheck = checkObvitnasViolation(newPos);
       let effectivePos = newPos;
@@ -727,43 +743,52 @@ export default function HomePage() {
         await handleGenerateRoute(effectivePos);
       }
     },
-    [currentMode, commitManualWaypoints, recomputeManualRoute, handleGenerateRoute, addToast]
+    [
+      currentMode,
+      isManualRouteClosed,
+      commitManualWaypoints,
+      recomputeManualRoute,
+      handleGenerateRoute,
+      addToast,
+    ]
   );
 
   // Manual Mode: Delete Single Waypoint
   const handleWaypointDelete = useCallback(
     async (index: number) => {
-      if (currentMode !== 'manual') return;
+      if (currentMode !== 'manual' || isManualRouteClosed) return;
       const curWaypoints = manualWaypointsRef.current;
       setManualRedoStack((prev) => [...prev, curWaypoints]);
       const updated = curWaypoints.filter((_, idx) => idx !== index);
       commitManualWaypoints(updated);
       await recomputeManualRoute(updated);
     },
-    [currentMode, commitManualWaypoints, recomputeManualRoute]
+    [currentMode, isManualRouteClosed, commitManualWaypoints, recomputeManualRoute]
   );
 
   // Manual Mode: Undo
   const handleUndoManualWaypoint = useCallback(async () => {
+    if (isManualRouteClosed) return;
     const curWaypoints = manualWaypointsRef.current;
     if (curWaypoints.length === 0) return;
     setManualRedoStack((prev) => [...prev, curWaypoints]);
     const updated = curWaypoints.slice(0, -1);
     commitManualWaypoints(updated);
     await recomputeManualRoute(updated);
-  }, [commitManualWaypoints, recomputeManualRoute]);
+  }, [isManualRouteClosed, commitManualWaypoints, recomputeManualRoute]);
 
   // Manual Mode: Redo
   const handleRedoManualWaypoint = useCallback(async () => {
-    if (manualRedoStack.length === 0) return;
+    if (isManualRouteClosed || manualRedoStack.length === 0) return;
     const nextWaypoints = manualRedoStack[manualRedoStack.length - 1];
     setManualRedoStack((prev) => prev.slice(0, -1));
     commitManualWaypoints(nextWaypoints);
     await recomputeManualRoute(nextWaypoints);
-  }, [manualRedoStack, commitManualWaypoints, recomputeManualRoute]);
+  }, [isManualRouteClosed, manualRedoStack, commitManualWaypoints, recomputeManualRoute]);
 
   // Manual Mode: Out & Back
   const handleOutAndBack = useCallback(async () => {
+    if (isManualRouteClosed) return;
     const curWaypoints = manualWaypointsRef.current;
     if (curWaypoints.length < 2) return;
     setManualRedoStack((prev) => [...prev, curWaypoints]);
@@ -781,12 +806,24 @@ export default function HomePage() {
     const combined = [...curWaypoints, ...returnPoints];
     commitManualWaypoints(combined);
     await recomputeManualRoute(combined);
-  }, [commitManualWaypoints, recomputeManualRoute]);
+  }, [isManualRouteClosed, commitManualWaypoints, recomputeManualRoute]);
+
+  // Manual Mode: Finish / Close Route Selection
+  const handleFinishManualRoute = useCallback(() => {
+    if (manualWaypointsRef.current.length < 2) return;
+    setIsManualRouteClosed(true);
+  }, []);
+
+  // Manual Mode: Reopen Route Selection to continue editing
+  const handleReopenManualRoute = useCallback(() => {
+    setIsManualRouteClosed(false);
+  }, []);
 
   // Manual Mode: Clear
   const handleClearManualWaypoints = useCallback(() => {
     manualRouteSeqRef.current++;
     setIsLoadingRoute(false);
+    setIsManualRouteClosed(false);
     const curWaypoints = manualWaypointsRef.current;
     if (curWaypoints.length > 0) {
       setManualRedoStack((prev) => [...prev, curWaypoints]);
@@ -797,6 +834,7 @@ export default function HomePage() {
 
   // Manual Mode: Close Loop
   const handleCloseManualLoop = useCallback(async () => {
+    if (isManualRouteClosed) return;
     const curWaypoints = manualWaypointsRef.current;
     if (curWaypoints.length < 2) return;
     setManualRedoStack((prev) => [...prev, curWaypoints]);
@@ -813,7 +851,7 @@ export default function HomePage() {
 
     commitManualWaypoints(closedWaypoints);
     await recomputeManualRoute(closedWaypoints);
-  }, [commitManualWaypoints, recomputeManualRoute]);
+  }, [isManualRouteClosed, commitManualWaypoints, recomputeManualRoute]);
 
   // Manual Mode: Reverse Route
   const handleReverseManualRoute = useCallback(async () => {
@@ -853,6 +891,7 @@ export default function HomePage() {
       setIsLoadingRoute(false);
       hasUserMapInteractionRef.current = true;
       setCurrentMode('manual');
+      setIsManualRouteClosed(loadedRoute.waypoints.length >= 2);
       commitManualWaypoints(loadedRoute.waypoints);
       setManualRouteData(loadedRoute);
       setFitTrigger((n) => n + 1);
@@ -924,6 +963,7 @@ export default function HomePage() {
           editableAnchors={activeEditableAnchors}
           requestedStartLocation={currentMode === 'random' ? loopStartLocation : null}
           routeMode={currentMode}
+          isManualLocked={isManualRouteClosed}
           selectedTile={selectedTile}
           unitSystem={unitSystem}
           fitTrigger={fitTrigger}
@@ -949,6 +989,9 @@ export default function HomePage() {
         }}
         waypoints={activeWaypoints}
         routeData={activeRouteData}
+        isManualRouteClosed={isManualRouteClosed}
+        onFinishManualRoute={handleFinishManualRoute}
+        onReopenManualRoute={handleReopenManualRoute}
         onUndoWaypoint={handleUndoManualWaypoint}
         onRedoWaypoint={handleRedoManualWaypoint}
         canRedo={manualRedoStack.length > 0}
