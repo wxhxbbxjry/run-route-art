@@ -47,7 +47,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: '#fc4c02',
+  themeColor: '#070b14',
 };
 
 export default function RootLayout({
@@ -58,7 +58,7 @@ export default function RootLayout({
   return (
     <html
       lang="id"
-      className={`${plusJakarta.variable} ${barlowCondensed.variable} ${jetbrainsMono.variable}`}
+      className={`dark ${plusJakarta.variable} ${barlowCondensed.variable} ${jetbrainsMono.variable}`}
     >
       <head>
         <link rel="preconnect" href="https://tiles.openfreemap.org" crossOrigin="anonymous" />

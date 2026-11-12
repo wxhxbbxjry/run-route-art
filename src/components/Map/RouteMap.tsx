@@ -401,7 +401,7 @@ export default function RouteMap({
 
     registerStravaArrowImage(map);
 
-    const tileCfg = TILE_LAYERS[selectedTileRef.current] || TILE_LAYERS['strava-outdoor'];
+    const tileCfg = TILE_LAYERS[selectedTileRef.current] || TILE_LAYERS['strava-dark'];
     const casingColor = tileCfg.isDarkSurface ? '#0b1120' : '#1e293b';
     const casingOpacity = tileCfg.isDarkSurface ? 0.92 : 0.72;
     const glowOpacity = tileCfg.isDarkSurface ? 0.34 : 0.16;
@@ -733,7 +733,7 @@ export default function RouteMap({
 
   // Resolve synchronous placeholder or raster spec
   const getSyncStyleForTile = useCallback((tileId: TileLayerId) => {
-    const cfg = TILE_LAYERS[tileId] || TILE_LAYERS['strava-outdoor'];
+    const cfg = TILE_LAYERS[tileId] || TILE_LAYERS['strava-dark'];
     if (tileId === 'strava-outdoor') return LIGHT_SHELL_STYLE;
     if (tileId === 'strava-dark') return DARK_SHELL_STYLE;
     return buildRasterMapStyle(cfg);
@@ -746,7 +746,7 @@ export default function RouteMap({
       appliedTileRef.current = tileId;
       fallbackUsedRef.current = null;
 
-      const cfg = TILE_LAYERS[tileId] || TILE_LAYERS['strava-outdoor'];
+      const cfg = TILE_LAYERS[tileId] || TILE_LAYERS['strava-dark'];
       map.setMaxZoom(cfg.maxZoom);
 
       if (tileId === 'strava-outdoor') {
@@ -791,7 +791,7 @@ export default function RouteMap({
       lastFlyTargetRef.current = flyToLocation;
     }
 
-    const initialConfig = TILE_LAYERS[selectedTile] || TILE_LAYERS['strava-outdoor'];
+    const initialConfig = TILE_LAYERS[selectedTile] || TILE_LAYERS['strava-dark'];
     appliedTileRef.current = selectedTile;
 
     const map = new maplibregl.Map({
@@ -1452,12 +1452,12 @@ export default function RouteMap({
 
   const handleResetMapSettings = useCallback(() => {
     const map = mapRef.current;
-    const isSwitchingStyle = selectedTileRef.current !== 'strava-outdoor';
+    const isSwitchingStyle = selectedTileRef.current !== 'strava-dark';
     showHeatmapRef.current = false;
     is3DModeRef.current = false;
     setShowHeatmap(false);
     setIs3DMode(false);
-    onTileChange('strava-outdoor');
+    onTileChange('strava-dark');
     setShowLayerPicker(false);
 
     if (map) {
@@ -1490,12 +1490,12 @@ export default function RouteMap({
     onResetMap?.();
   }, [onTileChange, waypoints, userLocation, getViewportPadding, onResetMap]);
 
-  const activeLayerCfg = TILE_LAYERS[selectedTile] || TILE_LAYERS['strava-outdoor'];
+  const activeLayerCfg = TILE_LAYERS[selectedTile] || TILE_LAYERS['strava-dark'];
 
   return (
     <div
       className={`relative w-full h-full overflow-hidden ${
-        activeLayerCfg.isDarkSurface ? 'bg-[#0f172a]' : 'bg-[#f1f5f9]'
+        activeLayerCfg.isDarkSurface ? 'bg-[#070b14]' : 'bg-[#0b1120]'
       }`}
     >
       {/* MapLibre Strava Style Container */}

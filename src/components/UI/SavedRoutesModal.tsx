@@ -71,7 +71,7 @@ export default function SavedRoutesModal({
     if (currentRouteData) {
       const modeLabel =
         currentRouteData.mode === 'random'
-          ? `${currentRouteData.shape === 'out_and_back' ? 'Out & Back' : 'Loop'} ${currentRouteData.distanceKm.toFixed(1)}K`
+          ? `Loop ${currentRouteData.distanceKm.toFixed(1)}K`
           : `Rute Manual ${currentRouteData.distanceKm.toFixed(1)}K`;
       setNewRouteName(modeLabel.trim());
     }
@@ -99,18 +99,17 @@ export default function SavedRoutesModal({
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       setIsSaving(false);
-      onAddToast('success', 'Rute Berhasil Disimpan', `"${title}" tersimpan di peramban.`);
+      onAddToast('success', 'Rute Tersimpan', `"${title}" disimpan ke daftar.`);
     } catch {
       onAddToast('error', 'Gagal Menyimpan', 'Penyimpanan lokal browser penuh.');
     }
   };
 
-  const handleDeleteRoute = (id: string, name: string) => {
+  const handleDeleteRoute = (id: string) => {
     const updated = savedRoutes.filter((r) => r.id !== id);
     setSavedRoutes(updated);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      onAddToast('info', 'Rute Dihapus', `"${name}" telah dihapus.`);
     } catch {
       // ignore
     }
@@ -120,7 +119,6 @@ export default function SavedRoutesModal({
     const gpx = generateGpx(item.routeData, item.name, item.paceSeconds);
     const slug = item.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
     downloadFile(gpx, `${slug}.gpx`, 'application/gpx+xml');
-    onAddToast('success', 'GPX Diunduh', `${item.name}.gpx siap untuk Strava/Garmin.`);
   };
 
   const processGpxFile = (file: File) => {
@@ -162,11 +160,7 @@ export default function SavedRoutesModal({
       };
 
       onLoadRoute(routeData, parsed.name);
-      onAddToast(
-        'success',
-        'GPX Berhasil Dimuat!',
-        `${parsed.name} (${parsed.totalDistanceKm.toFixed(2)} km) siap ditampilkan di peta.`
-      );
+      onAddToast('success', 'GPX Dimuat', `${parsed.name} (${parsed.totalDistanceKm.toFixed(2)} km)`);
       onClose();
     };
 
@@ -191,7 +185,7 @@ export default function SavedRoutesModal({
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 dark:bg-black/75 backdrop-blur-sm transition-opacity duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm transition-opacity duration-200"
     >
       <div className="relative w-full max-w-lg bg-[var(--surface-solid)] rounded-[24px] border border-[var(--border-subtle)] shadow-2xl overflow-hidden flex flex-col max-h-[88dvh] text-[var(--text-primary)] ui-modal-enter">
         <div
@@ -363,7 +357,6 @@ export default function SavedRoutesModal({
                           type="button"
                           onClick={() => {
                             onLoadRoute(item.routeData, item.name);
-                            onAddToast('success', 'Rute Dimuat', `"${item.name}" ditampilkan di peta.`);
                             onClose();
                           }}
                           className="min-h-[38px] px-3 py-1.5 rounded-xl bg-[#fc4c02] hover:bg-[#e34402] text-white font-bold text-xs ui-btn-primary ui-focus-ring"
@@ -381,10 +374,10 @@ export default function SavedRoutesModal({
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteRoute(item.id, item.name)}
+                          onClick={() => handleDeleteRoute(item.id)}
                           title="Hapus Rute"
                           aria-label={`Hapus rute ${item.name}`}
-                          className="w-9 h-9 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/70 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-500/40 flex items-center justify-center ui-btn-secondary ui-focus-ring"
+                          className="w-9 h-9 rounded-xl bg-rose-950/60 hover:bg-rose-900/70 text-rose-300 border border-rose-500/40 flex items-center justify-center ui-btn-secondary ui-focus-ring"
                         >
                           <Trash2 className="w-4 h-4" aria-hidden="true" />
                         </button>

@@ -6,7 +6,6 @@ import {
   LatLng,
   Waypoint,
   RouteData,
-  GeneratorShape,
 } from '@/lib/types';
 import ManualMode from './ManualMode';
 import RandomLoopMode from './RandomLoopMode';
@@ -18,15 +17,11 @@ import {
   FolderOpen,
   Undo2,
   Download,
-  Moon,
-  Sun,
 } from 'lucide-react';
 
 interface SidebarProps {
   currentMode: RouteMode;
   onModeChange: (mode: RouteMode) => void;
-  theme?: 'light' | 'dark';
-  onToggleTheme?: () => void;
   // Manual mode props
   waypoints: Waypoint[];
   routeData: RouteData | null;
@@ -41,12 +36,10 @@ interface SidebarProps {
   unitSystem?: 'km' | 'mi';
   onToggleUnit?: () => void;
   onOpenExport?: () => void;
-  // Single-route Generator props (No Saran Rute / No Preferensi / No Skor)
+  // Single-route Generator props (Loop Memutar Only)
   startLocation: LatLng | null;
   targetDistanceKm: number;
   onTargetDistanceChange: (km: number) => void;
-  routeShape: GeneratorShape;
-  onRouteShapeChange: (shape: GeneratorShape) => void;
   onUseMyLocation: () => void;
   onGenerateLoop: () => void;
   onReRollLoop: () => void;
@@ -61,8 +54,6 @@ interface SidebarProps {
 export default function Sidebar({
   currentMode,
   onModeChange,
-  theme = 'light',
-  onToggleTheme,
   waypoints,
   routeData,
   onUndoWaypoint,
@@ -79,8 +70,6 @@ export default function Sidebar({
   startLocation,
   targetDistanceKm,
   onTargetDistanceChange,
-  routeShape,
-  onRouteShapeChange,
   onUseMyLocation,
   onGenerateLoop,
   onReRollLoop,
@@ -478,8 +467,6 @@ export default function Sidebar({
   const isMiles = unitSystem === 'mi';
   const displayDist = isMiles ? distKm * 0.621371 : distKm;
   const unitLabel = isMiles ? 'MI' : 'KM';
-  const isDarkTheme = theme === 'dark';
-  const displayedShape = routeData?.shape ?? routeShape;
   const hasExportableRoute = Boolean(routeData && routeData.coordinates.length >= 2);
 
   return (
@@ -522,28 +509,6 @@ export default function Sidebar({
                   aria-hidden="true"
                 />
                 <span>Rute &amp; GPX</span>
-              </button>
-            )}
-
-            {onToggleTheme && (
-              <button
-                type="button"
-                onClick={onToggleTheme}
-                title={isDarkTheme ? 'Aktifkan Tema Terang' : 'Aktifkan Tema Gelap'}
-                aria-label={isDarkTheme ? 'Aktifkan Tema Terang' : 'Aktifkan Tema Gelap'}
-                className="group w-[36px] h-[36px] xl:w-[38px] xl:h-[38px] rounded-xl bg-[var(--surface-well)] hover:bg-[var(--brand-tint)] text-[var(--text-primary)] dark:text-amber-300 border border-[var(--border-subtle)] flex items-center justify-center shrink-0 ui-btn-secondary ui-focus-ring"
-              >
-                {isDarkTheme ? (
-                  <Sun
-                    className="w-4 h-4 transition-transform duration-200 group-hover:rotate-45"
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <Moon
-                    className="w-4 h-4 transition-transform duration-200 group-hover:-rotate-12"
-                    aria-hidden="true"
-                  />
-                )}
               </button>
             )}
           </div>
@@ -625,8 +590,6 @@ export default function Sidebar({
               startLocation={startLocation}
               targetDistanceKm={targetDistanceKm}
               onTargetDistanceChange={onTargetDistanceChange}
-              routeShape={routeShape}
-              onRouteShapeChange={onRouteShapeChange}
               onUseMyLocation={onUseMyLocation}
               onGenerateLoop={onGenerateLoop}
               onReRoll={onReRollLoop}
@@ -700,11 +663,7 @@ export default function Sidebar({
                 className="flex items-center gap-2.5 flex-1 min-w-0 min-h-[44px] text-left rounded-xl py-0.5 ui-focus-ring active:scale-[0.98] transition-transform"
               >
                 <div className="w-9 h-9 rounded-xl bg-[#fc4c02] flex items-center justify-center text-white font-display font-extrabold text-sm shrink-0 shadow-sm">
-                  {currentMode === 'random'
-                    ? displayedShape === 'out_and_back'
-                      ? 'PP'
-                      : 'L'
-                    : 'M'}
+                  {currentMode === 'random' ? 'L' : 'M'}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-baseline gap-1">
@@ -716,11 +675,7 @@ export default function Sidebar({
                     </span>
                   </div>
                   <p className="text-[11px] text-[var(--text-muted)] font-semibold truncate mt-0.5">
-                    {currentMode === 'random'
-                      ? displayedShape === 'out_and_back'
-                        ? 'Pergi-Pulang'
-                        : 'Loop Memutar'
-                      : 'Manual Tap'}
+                    {currentMode === 'random' ? 'Random Loop' : 'Manual Tap'}
                   </p>
                 </div>
               </button>
@@ -782,7 +737,7 @@ export default function Sidebar({
             </div>
           </div>
 
-          {/* Mobile Expanded Header Controls (Mode Switcher + Unit + Theme) */}
+          {/* Mobile Expanded Header Controls (Mode Switcher + Unit) */}
           <div
             ref={modeBarRef}
             onPointerDown={handleHeaderPointerDown}
@@ -828,22 +783,6 @@ export default function Sidebar({
                 {unitLabel}
               </button>
             )}
-
-            {onToggleTheme && (
-              <button
-                type="button"
-                onClick={onToggleTheme}
-                title={isDarkTheme ? 'Aktifkan Tema Terang' : 'Aktifkan Tema Gelap'}
-                aria-label={isDarkTheme ? 'Aktifkan Tema Terang' : 'Aktifkan Tema Gelap'}
-                className="min-h-[40px] min-w-[44px] px-2.5 rounded-xl bg-[var(--surface-solid)] text-[var(--text-primary)] dark:text-amber-300 border border-[var(--border-subtle)] text-xs font-bold flex items-center justify-center gap-1 shrink-0 ui-btn-secondary ui-focus-ring"
-              >
-                {isDarkTheme ? (
-                  <Sun className="w-4 h-4" aria-hidden="true" />
-                ) : (
-                  <Moon className="w-4 h-4" aria-hidden="true" />
-                )}
-              </button>
-            )}
           </div>
 
           {/* Mobile Scroll Content */}
@@ -880,8 +819,6 @@ export default function Sidebar({
                 startLocation={startLocation}
                 targetDistanceKm={targetDistanceKm}
                 onTargetDistanceChange={onTargetDistanceChange}
-                routeShape={routeShape}
-                onRouteShapeChange={onRouteShapeChange}
                 onUseMyLocation={onUseMyLocation}
                 onGenerateLoop={onGenerateLoop}
                 onReRoll={onReRollLoop}

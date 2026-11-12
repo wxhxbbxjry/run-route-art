@@ -4,14 +4,14 @@ import { TileLayerOption } from './types';
 export const HEATMAP_PLANET_SOURCE_URL = 'https://tiles.openfreemap.org/planet';
 
 export const TILE_LAYERS: Record<string, TileLayerOption> = {
-  'strava-outdoor': {
-    id: 'strava-outdoor',
-    name: 'Map Standar',
-    description: 'Peta lari & outdoor terang tajam khas Strava (100% Free)',
-    swatch: '#fc4c02',
-    isDarkSurface: false,
+  'strava-dark': {
+    id: 'strava-dark',
+    name: 'Map Night View',
+    description: 'Peta malam utama kontras tinggi — optimal untuk rute & heatmap',
+    swatch: '#1e293b',
+    isDarkSurface: true,
     kind: 'vector',
-    styleUrl: 'https://tiles.openfreemap.org/styles/liberty',
+    styleUrl: 'https://tiles.openfreemap.org/styles/dark',
     attribution: '&copy; OpenFreeMap &copy; OpenStreetMap contributors',
     maxZoom: 21,
   },
@@ -33,14 +33,14 @@ export const TILE_LAYERS: Record<string, TileLayerOption> = {
     maxZoom: 21,
     maxNativeZoom: 18,
   },
-  'strava-dark': {
-    id: 'strava-dark',
-    name: 'Map Night View',
-    description: 'Mode peta malam kontras tinggi untuk lari malam & heatmap',
-    swatch: '#1e293b',
-    isDarkSurface: true,
+  'strava-outdoor': {
+    id: 'strava-outdoor',
+    name: 'Map Standar',
+    description: 'Peta lari & outdoor terang tajam khas Strava (100% Free)',
+    swatch: '#fc4c02',
+    isDarkSurface: false,
     kind: 'vector',
-    styleUrl: 'https://tiles.openfreemap.org/styles/dark',
+    styleUrl: 'https://tiles.openfreemap.org/styles/liberty',
     attribution: '&copy; OpenFreeMap &copy; OpenStreetMap contributors',
     maxZoom: 21,
   },

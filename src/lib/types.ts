@@ -11,8 +11,6 @@ export interface Waypoint extends LatLng {
 
 export type RouteMode = 'manual' | 'random';
 
-export type GeneratorShape = 'loop' | 'out_and_back';
-
 export type UnitSystem = 'km' | 'mi';
 
 export interface RouteData {
@@ -23,12 +21,10 @@ export interface RouteData {
   source: 'valhalla' | 'brouter' | 'osrm' | 'direct';
   mode: RouteMode;
   targetDistanceKm?: number;
-  shape?: GeneratorShape;
 }
 
 export interface GeneratedRouteResult {
   id: string;
-  shape: GeneratorShape;
   routeData: RouteData;
   anchors: LatLng[];
   anchorIndices: number[];
@@ -36,7 +32,7 @@ export interface GeneratedRouteResult {
   generatedAt: number;
 }
 
-export type TileLayerId = 'strava-outdoor' | 'strava-satellite' | 'strava-dark' | 'strava-trail';
+export type TileLayerId = 'strava-dark' | 'strava-satellite' | 'strava-outdoor' | 'strava-trail';
 
 export interface TileLayerOption {
   id: TileLayerId;

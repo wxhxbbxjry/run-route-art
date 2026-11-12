@@ -1,6 +1,5 @@
 import {
   GeneratedRouteResult,
-  GeneratorShape,
   LatLng,
   RouteData,
   Waypoint,
@@ -1808,10 +1807,6 @@ export async function generateAccurateLoop(
   };
 }
 
-export interface RouteBuildExtras {
-  shape?: GeneratorShape;
-}
-
 /**
  * Builds complete RouteData from a routing result.
  */
@@ -1819,8 +1814,7 @@ export function buildRouteData(
   waypoints: Waypoint[],
   routeResult: RouteFetchResult,
   mode: RouteData['mode'],
-  targetDistanceKm?: number,
-  extras?: RouteBuildExtras
+  targetDistanceKm?: number
 ): RouteData {
   return {
     coordinates: routeResult.coordinates,
@@ -1830,14 +1824,12 @@ export function buildRouteData(
     source: routeResult.source,
     mode,
     targetDistanceKm,
-    ...(extras?.shape ? { shape: extras.shape } : {}),
   };
 }
 
 export interface GenerateBestRouteOptions {
   start: LatLng;
   targetKm: number;
-  shape: GeneratorShape;
   existingRoutes?: LatLng[][];
   seedOffset?: number;
   signal?: AbortSignal;
@@ -1862,28 +1854,14 @@ function makeGeneratedRouteObject(params: {
   coords: LatLng[];
   distanceKm: number;
   targetKm: number;
-  shape: GeneratorShape;
   source: 'valhalla' | 'brouter' | 'osrm' | 'direct';
 }): GeneratedRouteResult {
-  const { coords, distanceKm, targetKm, shape, source } = params;
+  const { coords, distanceKm, targetKm, source } = params;
   const { points: anchorPts, indices: anchorIndices } = extractEditableAnchors(coords, 14);
 
-  const waypoints: Waypoint[] =
-    shape === 'loop'
-      ? [{ id: 'start-point', lat: coords[0].lat, lng: coords[0].lng, name: 'Start / Finish' }]
-      : [
-          { id: 'start-point', lat: coords[0].lat, lng: coords[0].lng, name: 'Start / Finish' },
-          ...(anchorPts.length >= 3
-            ? [
-                {
-                  id: 'turn-point',
-                  lat: anchorPts[Math.floor(anchorPts.length / 2)].lat,
-                  lng: anchorPts[Math.floor(anchorPts.length / 2)].lng,
-                  name: 'Titik Balik (PP)',
-                },
-              ]
-            : []),
-        ];
+  const waypoints: Waypoint[] = [
+    { id: 'start-point', lat: coords[0].lat, lng: coords[0].lng, name: 'Start / Finish' },
+  ];
 
   const routeData: RouteData = {
     coordinates: coords,
@@ -1893,12 +1871,10 @@ function makeGeneratedRouteObject(params: {
     source,
     mode: 'random',
     targetDistanceKm: targetKm,
-    shape,
   };
 
   return {
     id: `gen-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    shape,
     routeData,
     anchors: anchorPts,
     anchorIndices,
@@ -1920,7 +1896,7 @@ function angularDiffDeg(a: number, b: number): number {
 }
 
 /**
- * Generates the single highest-accuracy Car & Motorcycle compliant running route
+ * Generates the single highest-accuracy Car & Motorcycle compliant running loop route
  * using multi-directional compass sweeps, distance accuracy calibration, and previous-route avoidance.
  */
 export async function generateSingleBestRoute(
@@ -1929,7 +1905,6 @@ export async function generateSingleBestRoute(
   const {
     start,
     targetKm,
-    shape,
     existingRoutes = [],
     seedOffset = 0,
     signal,
@@ -1972,18 +1947,9 @@ export async function generateSingleBestRoute(
       : [effectiveStart, wp1, wp2, effectiveStart];
   };
 
-  const buildOutBackTriplet = (rTurnKm: number, hDeg: number): LatLng[] => {
-    const hRad = (hDeg * Math.PI) / 180;
-    const rawTurn: LatLng = {
-      lat: effectiveStart.lat + (rTurnKm * Math.cos(hRad)) / kmPerLat,
-      lng: effectiveStart.lng + (rTurnKm * Math.sin(hRad)) / kmPerLng,
-    };
-    return [effectiveStart, pushOutOfObvitnas(rawTurn), effectiveStart];
-  };
-
   const baseAngle = (((seedOffset * 53 + 25) % 360) + 360) % 360;
   const primaryTurnClass: ValhallaRoadClass = 'tertiary';
-  const baseRadiusKm = shape === 'loop' ? targetKm / 13.5 : targetKm / 2.75;
+  const baseRadiusKm = targetKm / 13.5;
 
   const pass1Specs: CompassSpec[] = [];
   const targetPass1Count = 5;
@@ -2023,10 +1989,7 @@ export async function generateSingleBestRoute(
   };
 
   const snapSpecWaypoints = async (spec: CompassSpec): Promise<LatLng[]> => {
-    const rawPts =
-      shape === 'loop'
-        ? buildLoopTriplet(spec.rKm, spec.heading, spec.reverseOrder, spec.spreadRad)
-        : buildOutBackTriplet(spec.rKm, spec.heading);
+    const rawPts = buildLoopTriplet(spec.rKm, spec.heading, spec.reverseOrder, spec.spreadRad);
 
     const snapped = await Promise.all(
       rawPts.map(async (pt, idx) => {
@@ -2255,7 +2218,6 @@ export async function generateSingleBestRoute(
         coords: winner.trip.coordinates,
         distanceKm: winner.trip.distanceKm,
         targetKm,
-        shape,
         source: activeEngine,
       })
     : null;

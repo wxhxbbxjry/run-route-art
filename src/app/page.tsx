@@ -9,10 +9,9 @@ import {
   RouteMode,
   TileLayerId,
   UnitSystem,
-  GeneratorShape,
   GeneratedRouteResult,
 } from '@/lib/types';
-import { loadStravaOutdoorStyle } from '@/lib/layers';
+import { loadStravaDarkStyle } from '@/lib/layers';
 import {
   fetchSmartManualRoute,
   buildRouteData,
@@ -55,22 +54,15 @@ const DEFAULT_CENTER: LatLng = {
   lng: 106.822, // Sudirman - Semanggi - GBK runner corridor default
 };
 
-const THEME_STORAGE_KEY = 'runroute_theme_v1';
-
-function makeGenKey(
-  start: LatLng,
-  distKm: number,
-  shape: GeneratorShape
-): string {
-  return `${start.lat.toFixed(4)}:${start.lng.toFixed(4)}|${distKm}|${shape}`;
+function makeGenKey(start: LatLng, distKm: number): string {
+  return `${start.lat.toFixed(4)}:${start.lng.toFixed(4)}|${distKm}`;
 }
 
 export default function HomePage() {
-  // Navigation & Theme Defaults
+  // Navigation & Night Map Defaults (Dark Mode Only)
   const [currentMode, setCurrentMode] = useState<RouteMode>('manual');
-  const [selectedTile, setSelectedTile] = useState<TileLayerId>('strava-outdoor');
+  const [selectedTile, setSelectedTile] = useState<TileLayerId>('strava-dark');
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('km');
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [isLoadingRoute, setIsLoadingRoute] = useState<boolean>(false);
   const [flyToLocation, setFlyToLocation] = useState<LatLng | null>(null);
   const [userGpsLocation, setUserGpsLocation] = useState<LatLng | null>(null);
@@ -79,37 +71,9 @@ export default function HomePage() {
   const hasManualLoopStartRef = useRef<boolean>(false);
   const hasUserMapInteractionRef = useRef<boolean>(false);
 
-  // Sync persisted theme preference & root html dark class
+  // Prefetch Night View vector style immediately while MapLibre JS chunk initializes
   useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
-      if (saved === 'dark' || saved === 'light') {
-        setTheme(saved);
-      }
-    } catch {
-      // Ignore storage access errors
-    }
-  }, []);
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-  }, [theme]);
-
-  const handleToggleTheme = useCallback(() => {
-    setTheme((prev) => {
-      const next = prev === 'light' ? 'dark' : 'light';
-      try {
-        window.localStorage.setItem(THEME_STORAGE_KEY, next);
-      } catch {
-        // Ignore storage write errors
-      }
-      return next;
-    });
-  }, []);
-
-  // Prefetch Strava Standard Outdoor vector style immediately while MapLibre JS chunk initializes
-  useEffect(() => {
-    void loadStravaOutdoorStyle();
+    void loadStravaDarkStyle();
   }, []);
 
   // 1. ISOLATED STATE: Manual Tap Mode (Smart Road Snap, Contraflow & Alley/Private avoidance are always mandatory)
@@ -124,10 +88,9 @@ export default function HomePage() {
     setManualWaypoints(wps);
   }, []);
 
-  // 2. ISOLATED STATE: Single-Route Generator Mode (Car/Motor Compliant, Zero Elevation, Zero Saran Rute)
+  // 2. ISOLATED STATE: Single-Route Generator Mode (Closed Loop Only)
   const [loopStartLocation, setLoopStartLocation] = useState<LatLng | null>(DEFAULT_CENTER);
   const [targetDistanceKm, setTargetDistanceKm] = useState<number>(10);
-  const [routeShape, setRouteShape] = useState<GeneratorShape>('loop');
   const [generatedRoute, setGeneratedRoute] = useState<GeneratedRouteResult | null>(null);
   const [undoVersion, setUndoVersion] = useState<number>(0);
 
@@ -146,7 +109,7 @@ export default function HomePage() {
     }>
   >([]);
 
-  // Cleanup active AbortController on unmount
+  // Cleanup active AbortController & toast timers on unmount
   useEffect(() => {
     return () => {
       generatorAbortRef.current?.abort();
@@ -157,7 +120,7 @@ export default function HomePage() {
   useEffect(() => {
     recentGeneratedCoordsRef.current = [];
     seedOffsetRef.current = 0;
-  }, [loopStartLocation, targetDistanceKm, routeShape]);
+  }, [loopStartLocation, targetDistanceKm]);
 
   // Auto-detect GPS position silently on app startup
   useEffect(() => {
@@ -188,23 +151,64 @@ export default function HomePage() {
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
   const [isSavedRoutesOpen, setIsSavedRoutesOpen] = useState<boolean>(false);
 
-  // Toasts Feedback
+  // Discrete non-intrusive notifications (max 2, deduped, auto-dismiss 2.6s-3.6s)
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const toastTimersRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    const timers = toastTimersRef.current;
+    return () => {
+      timers.forEach((tid) => window.clearTimeout(tid));
+      timers.clear();
+    };
+  }, []);
+
+  const removeToast = useCallback((id: string) => {
+    const tid = toastTimersRef.current.get(id);
+    if (tid !== undefined) {
+      window.clearTimeout(tid);
+      toastTimersRef.current.delete(id);
+    }
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
 
   const addToast = useCallback(
     (type: ToastMessage['type'], title: string, description?: string) => {
-      const id = `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-      setToasts((prev) => [...prev, { id, type, title, description }]);
-      setTimeout(() => {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const durationMs = type === 'warning' || type === 'error' ? 4200 : 3500;
+
+      setToasts((prev) => {
+        const removed = prev.filter((t) => t.title === title);
+        removed.forEach((t) => {
+          const oldTid = toastTimersRef.current.get(t.id);
+          if (oldTid !== undefined) {
+            window.clearTimeout(oldTid);
+            toastTimersRef.current.delete(t.id);
+          }
+        });
+        const kept = prev.filter((t) => t.title !== title);
+        if (kept.length >= 2) {
+          const dropped = kept.slice(0, kept.length - 1);
+          dropped.forEach((t) => {
+            const oldTid = toastTimersRef.current.get(t.id);
+            if (oldTid !== undefined) {
+              window.clearTimeout(oldTid);
+              toastTimersRef.current.delete(t.id);
+            }
+          });
+          return [...kept.slice(-1), { id, type, title, description }];
+        }
+        return [...kept, { id, type, title, description }];
+      });
+
+      const timerId = window.setTimeout(() => {
+        toastTimersRef.current.delete(id);
         setToasts((prev) => prev.filter((t) => t.id !== id));
-      }, 5000);
+      }, durationMs);
+      toastTimersRef.current.set(id, timerId);
     },
     []
   );
-
-  const removeToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
 
   // Mode-isolated active states (Manual Tap & Single-Route Generator)
   const activeWaypoints =
@@ -321,17 +325,12 @@ export default function HomePage() {
         setGeneratedRoute(null);
         setUndoVersion((v) => v + 1);
         setLoopStartLocation(effectiveLatLng);
-        addToast(
-          'info',
-          'Titik Start Dipilih',
-          `Lokasi diatur ke [${effectiveLatLng.lat.toFixed(4)}, ${effectiveLatLng.lng.toFixed(4)}]. Klik Generate Rute.`
-        );
       }
     },
     [currentMode, commitManualWaypoints, recomputeManualRoute, cancelAllGeneratorWork, addToast]
   );
 
-  // Generator: Generate 1 highest-accuracy Car/Motor compliant route
+  // Generator: Generate 1 highest-accuracy Car/Motor compliant loop route
   const handleGenerateRoute = useCallback(
     async (overrideStart?: LatLng, explicitSeedOffset?: number) => {
       const start = overrideStart ?? loopStartLocation;
@@ -350,7 +349,7 @@ export default function HomePage() {
         recentGeneratedCoordsRef.current = [];
       }
 
-      const key = makeGenKey(start, targetDistanceKm, routeShape);
+      const key = makeGenKey(start, targetDistanceKm);
       generationKeyRef.current = key;
 
       const controller = new AbortController();
@@ -362,7 +361,6 @@ export default function HomePage() {
         const res = await generateSingleBestRoute({
           start,
           targetKm: targetDistanceKm,
-          shape: routeShape,
           existingRoutes: isReRoll ? recentGeneratedCoordsRef.current : [],
           seedOffset: seed,
           signal: controller.signal,
@@ -382,7 +380,7 @@ export default function HomePage() {
             addToast(
               'info',
               'Mode Routing Cadangan Aktif',
-              'Valhalla sedang sibuk/offline, rute dialihkan cepat ke jaringan jalan mobil & motor cadangan.'
+              'Valhalla sibuk, memakai jaringan jalan kendaraan cadangan.'
             );
           }
         } else {
@@ -394,22 +392,11 @@ export default function HomePage() {
             ...recentGeneratedCoordsRef.current.slice(-3),
             res.route.routeData.coordinates,
           ];
-          const shapeName = routeShape === 'out_and_back' ? 'Pergi-Pulang' : 'Loop';
-          const devPct =
-            targetDistanceKm > 0
-              ? ((res.route.routeData.distanceKm - targetDistanceKm) / targetDistanceKm) * 100
-              : 0;
-          const acc = Math.max(0, 100 - Math.abs(devPct)).toFixed(1);
-          addToast(
-            'success',
-            `Rute ${shapeName} Siap!`,
-            `${res.route.routeData.distanceKm.toFixed(2)} km (Akurasi ${acc}%)`
-          );
         } else {
           addToast(
             'warning',
             'Rute Tidak Ditemukan',
-            'Coba geser titik start ke jalan raya terdekat atau sesuaikan target jarak.'
+            'Geser titik start ke jalan raya terdekat atau ubah target jarak.'
           );
         }
       } catch {
@@ -422,7 +409,6 @@ export default function HomePage() {
     [
       loopStartLocation,
       targetDistanceKm,
-      routeShape,
       cancelAllGeneratorWork,
       addToast,
     ]
@@ -548,10 +534,7 @@ export default function HomePage() {
           distanceKm: stitchedDistanceKm,
         },
         'random',
-        targetDistanceKm,
-        {
-          shape: current.shape,
-        }
+        targetDistanceKm
       );
 
       routeEditHistoryRef.current.push(snapshot);
@@ -669,9 +652,8 @@ export default function HomePage() {
         midSlotInNext: null,
         mode: 'delete',
       });
-      addToast('info', 'Anchor Dihapus', `Titik anchor #${index} dihapus dari jalur.`);
     },
-    [generatedRoute, spliceGeneratedSubroute, addToast]
+    [generatedRoute, spliceGeneratedSubroute]
   );
 
   // Undo Edit on generated route
@@ -694,8 +676,7 @@ export default function HomePage() {
           }
         : prev
     );
-    addToast('info', 'Edit Dibatalkan', 'Jalur rute dikembalikan ke kondisi sebelumnya.');
-  }, [generatedRoute, addToast]);
+  }, [generatedRoute]);
 
   // Manual & Preview Start Pin Drag
   const handleWaypointDrag = useCallback(
@@ -757,10 +738,9 @@ export default function HomePage() {
       setManualRedoStack((prev) => [...prev, curWaypoints]);
       const updated = curWaypoints.filter((_, idx) => idx !== index);
       commitManualWaypoints(updated);
-      addToast('info', 'Waypoint Dihapus', `Waypoint #${index + 1} berhasil dihapus.`);
       await recomputeManualRoute(updated);
     },
-    [currentMode, commitManualWaypoints, recomputeManualRoute, addToast]
+    [currentMode, commitManualWaypoints, recomputeManualRoute]
   );
 
   // Manual Mode: Undo
@@ -801,8 +781,7 @@ export default function HomePage() {
     const combined = [...curWaypoints, ...returnPoints];
     commitManualWaypoints(combined);
     await recomputeManualRoute(combined);
-    addToast('success', 'Rute Bolak-Balik Terbentuk', 'Rute digandakan kembali ke titik asal (Out & Back)!');
-  }, [commitManualWaypoints, recomputeManualRoute, addToast]);
+  }, [commitManualWaypoints, recomputeManualRoute]);
 
   // Manual Mode: Clear
   const handleClearManualWaypoints = useCallback(() => {
@@ -814,8 +793,7 @@ export default function HomePage() {
     }
     commitManualWaypoints([]);
     setManualRouteData(null);
-    addToast('info', 'Rute Manual Direset', 'Semua titik waypoint telah dihapus.');
-  }, [commitManualWaypoints, addToast]);
+  }, [commitManualWaypoints]);
 
   // Manual Mode: Close Loop
   const handleCloseManualLoop = useCallback(async () => {
@@ -835,8 +813,7 @@ export default function HomePage() {
 
     commitManualWaypoints(closedWaypoints);
     await recomputeManualRoute(closedWaypoints);
-    addToast('success', 'Loop Berhasil Ditutup', 'Rute kembali ke titik awal!');
-  }, [commitManualWaypoints, recomputeManualRoute, addToast]);
+  }, [commitManualWaypoints, recomputeManualRoute]);
 
   // Manual Mode: Reverse Route
   const handleReverseManualRoute = useCallback(async () => {
@@ -846,8 +823,7 @@ export default function HomePage() {
     const reversed = [...curWaypoints].reverse();
     commitManualWaypoints(reversed);
     await recomputeManualRoute(reversed);
-    addToast('info', 'Arah Dibalik', 'Titik awal dan akhir rute telah ditukar.');
-  }, [commitManualWaypoints, recomputeManualRoute, addToast]);
+  }, [commitManualWaypoints, recomputeManualRoute]);
 
   // Generator: Re-roll (shift seedOffset to discover a non-overlapping fresh corridor)
   const handleReRollLoop = useCallback(() => {
@@ -866,15 +842,13 @@ export default function HomePage() {
     setGeneratedRoute(null);
     setIsLoadingRoute(false);
     setTargetDistanceKm(10);
-    setRouteShape('loop');
     hasManualLoopStartRef.current = false;
     setLoopStartLocation(userGpsLocation || DEFAULT_CENTER);
-    addToast('info', 'Generator Direset', 'Rute dihapus dan target jarak dikembalikan ke default.');
-  }, [cancelAllGeneratorWork, userGpsLocation, addToast]);
+  }, [cancelAllGeneratorWork, userGpsLocation]);
 
   // Load Imported GPX or Saved Route
   const handleLoadRoute = useCallback(
-    (loadedRoute: RouteData, name?: string) => {
+    (loadedRoute: RouteData) => {
       manualRouteSeqRef.current++;
       setIsLoadingRoute(false);
       hasUserMapInteractionRef.current = true;
@@ -882,13 +856,8 @@ export default function HomePage() {
       commitManualWaypoints(loadedRoute.waypoints);
       setManualRouteData(loadedRoute);
       setFitTrigger((n) => n + 1);
-      addToast(
-        'success',
-        'Rute Berhasil Dimuat',
-        name ? `"${name}" ditampilkan di peta.` : 'Rute siap digunakan.'
-      );
     },
-    [commitManualWaypoints, addToast]
+    [commitManualWaypoints]
   );
 
   // Geolocation quick helper (Random Loop panel button)
@@ -911,11 +880,6 @@ export default function HomePage() {
         setUserGpsLocation(userLoc);
         setLoopStartLocation(userLoc);
         setFlyToLocation(userLoc);
-        addToast(
-          'success',
-          'Lokasi GPS Terdeteksi',
-          `Koordinat [${userLoc.lat.toFixed(4)}, ${userLoc.lng.toFixed(4)}]`
-        );
       },
       (err) => {
         addToast('warning', 'Gagal Mengambil GPS', err.message);
@@ -938,29 +902,12 @@ export default function HomePage() {
         setUndoVersion((v) => v + 1);
         setLoopStartLocation(detected);
       }
-      addToast(
-        'success',
-        'Lokasi GPS Terdeteksi',
-        `Koordinat [${detected.lat.toFixed(4)}, ${detected.lng.toFixed(4)}]`
-      );
     },
-    [currentMode, cancelAllGeneratorWork, addToast]
+    [currentMode, cancelAllGeneratorWork]
   );
 
-  const handleResetMap = useCallback(() => {
-    addToast(
-      'info',
-      'Settingan Map Direset',
-      'Kembali ke Map Standar, 2D & Heatmap Nonaktif.'
-    );
-  }, [addToast]);
-
   return (
-    <main
-      className={`relative w-screen h-[100dvh] overflow-hidden flex ${
-        theme === 'dark' ? 'dark bg-[#0f172a]' : 'bg-[#f8fafc]'
-      }`}
-    >
+    <main className="dark relative w-screen h-[100dvh] overflow-hidden flex bg-[#070b14]">
       {/* Mobile Quick Telemetry & Pace Control Bar */}
       <MobileTopHud
         routeData={activeRouteData}
@@ -990,7 +937,6 @@ export default function HomePage() {
           onAnchorDrag={handleAnchorDrag}
           onAnchorInsert={handleAnchorInsert}
           onAnchorDelete={handleAnchorDelete}
-          onResetMap={handleResetMap}
           flyToLocation={flyToLocation}
         />
       </div>
@@ -1001,8 +947,6 @@ export default function HomePage() {
         onModeChange={(m) => {
           setCurrentMode(m);
         }}
-        theme={theme}
-        onToggleTheme={handleToggleTheme}
         waypoints={activeWaypoints}
         routeData={activeRouteData}
         onUndoWaypoint={handleUndoManualWaypoint}
@@ -1019,12 +963,6 @@ export default function HomePage() {
         startLocation={loopStartLocation}
         targetDistanceKm={targetDistanceKm}
         onTargetDistanceChange={setTargetDistanceKm}
-        routeShape={routeShape}
-        onRouteShapeChange={(shape) => {
-          anchorEditSeqRef.current++;
-          setIsLoadingRoute(false);
-          setRouteShape(shape);
-        }}
         onUseMyLocation={handleUseMyLocation}
         onGenerateLoop={() => {
           void handleGenerateRoute();

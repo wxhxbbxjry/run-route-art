@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { GeneratorShape, LatLng, RouteData } from '@/lib/types';
+import { LatLng, RouteData } from '@/lib/types';
 import {
   Crosshair,
   Shuffle,
@@ -11,8 +11,6 @@ import {
   Trash2,
   CheckCircle2,
   AlertTriangle,
-  Repeat,
-  ArrowLeftRight,
   Undo2,
   Minus,
   Plus,
@@ -22,8 +20,6 @@ interface RandomLoopModeProps {
   startLocation: LatLng | null;
   targetDistanceKm: number;
   onTargetDistanceChange: (km: number) => void;
-  routeShape: GeneratorShape;
-  onRouteShapeChange: (shape: GeneratorShape) => void;
   onUseMyLocation: () => void;
   onGenerateLoop: () => void;
   onReRoll: () => void;
@@ -46,8 +42,6 @@ export default function RandomLoopMode({
   startLocation,
   targetDistanceKm,
   onTargetDistanceChange,
-  routeShape,
-  onRouteShapeChange,
   onUseMyLocation,
   onGenerateLoop,
   onReRoll,
@@ -74,54 +68,7 @@ export default function RandomLoopMode({
 
   return (
     <div className="space-y-2.5 ui-fade-slide-up">
-      {/* 1. Segmented Shape Toggle (Loop Memutar vs Pergi-Pulang PP) */}
-      <div className="space-y-1">
-        <span className="text-[11px] uppercase tracking-wider font-bold text-[var(--text-muted)] block px-0.5">
-          Bentuk Rute
-        </span>
-        <div
-          role="radiogroup"
-          aria-label="Bentuk Rute Generator"
-          className="relative grid grid-cols-2 p-1 rounded-xl bg-[var(--surface-well)] border border-[var(--border-subtle)]"
-        >
-          <span
-            aria-hidden="true"
-            className={`pointer-events-none absolute top-1 bottom-1 left-1 w-[calc(50%-0.25rem)] rounded-lg bg-[var(--surface-solid)] shadow-sm border border-[var(--border-subtle)] transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-              routeShape === 'out_and_back' ? 'translate-x-full' : 'translate-x-0'
-            }`}
-          />
-          <button
-            type="button"
-            role="radio"
-            aria-checked={routeShape === 'loop'}
-            onClick={() => onRouteShapeChange('loop')}
-            className={`relative z-10 min-h-[40px] md:min-h-[34px] px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors ui-focus-ring ${
-              routeShape === 'loop'
-                ? 'text-[var(--brand-ink)]'
-                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-            }`}
-          >
-            <Repeat className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>Loop Memutar</span>
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={routeShape === 'out_and_back'}
-            onClick={() => onRouteShapeChange('out_and_back')}
-            className={`relative z-10 min-h-[40px] md:min-h-[34px] px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors ui-focus-ring ${
-              routeShape === 'out_and_back'
-                ? 'text-[var(--brand-ink)]'
-                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-            }`}
-          >
-            <ArrowLeftRight className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>Pergi-Pulang</span>
-          </button>
-        </div>
-      </div>
-
-      {/* 2. Origin Coordinate Strip */}
+      {/* 1. Origin Coordinate Strip */}
       <div className="p-2.5 xl:p-3 rounded-2xl cockpit-well space-y-1.5">
         <div className="flex items-center justify-between text-xs gap-2">
           <span className="font-bold text-[var(--text-primary)] flex items-center gap-1.5">
@@ -279,16 +226,12 @@ export default function RandomLoopMode({
             />
           )}
           <span>
-            {isLoading
-              ? 'Menghitung Jalur Terbaik...'
-              : routeShape === 'out_and_back'
-              ? 'Generate Rute PP'
-              : 'Generate Rute'}
+            {isLoading ? 'Menghitung Jalur Terbaik...' : 'Generate Rute'}
           </span>
         </button>
 
         {isLoading && (
-          <div className="h-1 w-full rounded-full bg-orange-100 dark:bg-slate-800 overflow-hidden">
+          <div className="h-1 w-full rounded-full bg-slate-800 overflow-hidden">
             <div className="h-full w-1/2 rounded-full bg-[#fc4c02] ui-loading-bar" />
           </div>
         )}

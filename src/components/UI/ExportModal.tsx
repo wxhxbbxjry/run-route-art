@@ -21,8 +21,7 @@ export default function ExportModal({
 }: ExportModalProps) {
   const [routeName, setRouteName] = useState(() => {
     if (routeData.mode === 'random') {
-      const label = routeData.shape === 'out_and_back' ? 'Out & Back' : 'Random Loop';
-      return `${label} ${routeData.distanceKm.toFixed(1)}K`;
+      return `Random Loop ${routeData.distanceKm.toFixed(1)}K`;
     }
     return `Manual Run Route ${routeData.distanceKm.toFixed(1)}K`;
   });
@@ -32,8 +31,7 @@ export default function ExportModal({
   useEffect(() => {
     if (!isOpen) return;
     if (routeData.mode === 'random') {
-      const label = routeData.shape === 'out_and_back' ? 'Out & Back' : 'Random Loop';
-      setRouteName(`${label} ${routeData.distanceKm.toFixed(1)}K`);
+      setRouteName(`Random Loop ${routeData.distanceKm.toFixed(1)}K`);
     } else {
       setRouteName(`Manual Run Route ${routeData.distanceKm.toFixed(1)}K`);
     }
@@ -79,7 +77,7 @@ export default function ExportModal({
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 dark:bg-black/75 backdrop-blur-sm transition-opacity duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm transition-opacity duration-200"
     >
       <div className="w-full max-w-md rounded-[24px] bg-[var(--surface-solid)] border border-[var(--border-subtle)] shadow-2xl overflow-hidden text-[var(--text-primary)] ui-modal-enter">
         <div
