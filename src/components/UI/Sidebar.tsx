@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { RouteMode, LatLng, Waypoint, RouteData } from '@/lib/types';
 import ManualMode from './ManualMode';
 import RandomLoopMode from './RandomLoopMode';
@@ -80,6 +80,276 @@ export default function Sidebar({
   isLoading,
 }: SidebarProps) {
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
+  const isMobileExpandedRef = useRef(isMobileExpanded);
+  isMobileExpandedRef.current = isMobileExpanded;
+
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const dockHeaderRef = useRef<HTMLDivElement>(null);
+  const scrimRef = useRef<HTMLDivElement>(null);
+  const scrollContentRef = useRef<HTMLDivElement>(null);
+  const suppressClickRef = useRef(false);
+  const cleanupDragRef = useRef<(() => void) | null>(null);
+
+  // Close expanded mobile Menu sheet cleanly on Escape
+  useEffect(() => {
+    if (!isMobileExpanded) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsMobileExpanded(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMobileExpanded]);
+
+  // Helper: create a live 1:1 vertical drag tracker for the mobile Menu bottom sheet
+  const createDragSession = useCallback((startY: number, startX: number) => {
+    const sheet = sheetRef.current;
+    const header = dockHeaderRef.current;
+    if (!sheet || !header) return null;
+
+    const sheetHeight = sheet.getBoundingClientRect().height;
+    const headerHeight = header.getBoundingClientRect().height || 68;
+    const maxOffset = Math.max(1, sheetHeight - headerHeight);
+    const wasExpanded = isMobileExpandedRef.current;
+    const startOffset = wasExpanded ? 0 : maxOffset;
+
+    let lastY = startY;
+    let lastTime = performance.now();
+    let velocityY = 0;
+    let currentOffset = startOffset;
+    let activeDrag = false;
+
+    const move = (clientY: number, clientX: number): 'pending' | 'dragging' | 'cancel' => {
+      const dy = clientY - startY;
+      const dx = clientX - startX;
+
+      if (!activeDrag) {
+        if (Math.abs(dy) < 6 && Math.abs(dx) < 6) {
+          return 'pending';
+        }
+        if (Math.abs(dx) > Math.abs(dy) * 1.15) {
+          return 'cancel';
+        }
+        activeDrag = true;
+        suppressClickRef.current = true;
+        sheet.style.transition = 'none';
+        if (scrimRef.current) {
+          scrimRef.current.style.transition = 'none';
+        }
+      }
+
+      const now = performance.now();
+      const dt = Math.max(1, now - lastTime);
+      const instantVel = (clientY - lastY) / dt;
+      velocityY = velocityY * 0.4 + instantVel * 0.6;
+      lastY = clientY;
+      lastTime = now;
+
+      const raw = startOffset + dy;
+      let clamped = raw;
+      if (raw < 0) {
+        clamped = Math.max(-18, raw * 0.16);
+      } else if (raw > maxOffset) {
+        clamped = Math.min(maxOffset + 12, maxOffset + (raw - maxOffset) * 0.16);
+      }
+      currentOffset = clamped;
+
+      sheet.style.transform = `translate3d(0, ${clamped.toFixed(1)}px, 0)`;
+      if (scrimRef.current) {
+        const progress = Math.max(0, Math.min(1, 1 - clamped / maxOffset));
+        scrimRef.current.style.opacity = progress.toFixed(3);
+      }
+
+      return 'dragging';
+    };
+
+    const end = (cancelled: boolean) => {
+      if (!activeDrag) return;
+
+      const threshold = Math.min(84, maxOffset * 0.25);
+      let nextExpanded = wasExpanded;
+      if (!cancelled) {
+        if (velocityY < -0.32) {
+          nextExpanded = true;
+        } else if (velocityY > 0.32) {
+          nextExpanded = false;
+        } else if (wasExpanded) {
+          nextExpanded = currentOffset <= threshold;
+        } else {
+          nextExpanded = currentOffset <= maxOffset - threshold;
+        }
+      }
+
+      sheet.style.transition = '';
+      if (scrimRef.current) {
+        scrimRef.current.style.transition = '';
+      }
+
+      // Lock current dragged transform as transition start frame before restoring class state
+      void sheet.offsetHeight;
+
+      sheet.style.transform = '';
+      if (scrimRef.current) {
+        scrimRef.current.style.opacity = '';
+      }
+
+      setIsMobileExpanded(nextExpanded);
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 90);
+    };
+
+    return { move, end };
+  }, []);
+
+  // Pointer drag on Handle / Header Bar / Mode Switcher bar
+  const handleHeaderPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      const targetEl = e.target as HTMLElement | null;
+      if (targetEl?.closest('input, textarea, select')) return;
+
+      cleanupDragRef.current?.();
+      const session = createDragSession(e.clientY, e.clientX);
+      if (!session) return;
+
+      const pointerId = e.pointerId;
+      let finished = false;
+
+      const cleanup = () => {
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+        window.removeEventListener('pointercancel', onPointerCancel);
+        if (cleanupDragRef.current === cleanup) {
+          cleanupDragRef.current = null;
+        }
+      };
+
+      const onPointerMove = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId || finished) return;
+        const status = session.move(ev.clientY, ev.clientX);
+        if (status === 'cancel') {
+          finished = true;
+          cleanup();
+        }
+      };
+
+      const onPointerUp = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId || finished) return;
+        finished = true;
+        cleanup();
+        session.end(false);
+      };
+
+      const onPointerCancel = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId || finished) return;
+        finished = true;
+        cleanup();
+        session.end(true);
+      };
+
+      cleanupDragRef.current = cleanup;
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerCancel);
+    },
+    [createDragSession]
+  );
+
+  // Pull down smoothly from top of scrollable Menu body when scrolled to top
+  useEffect(() => {
+    const scrollEl = scrollContentRef.current;
+    if (!scrollEl) return;
+
+    let activeTouchId: number | null = null;
+    let startY = 0;
+    let startX = 0;
+    let abandoned = false;
+    let session: ReturnType<typeof createDragSession> = null;
+
+    const findTouch = (touches: TouchList, id: number): Touch | null => {
+      for (let i = 0; i < touches.length; i++) {
+        if (touches[i].identifier === id) return touches[i];
+      }
+      return null;
+    };
+
+    const onTouchStart = (ev: TouchEvent) => {
+      if (!isMobileExpandedRef.current || ev.touches.length !== 1) return;
+      const targetEl = ev.target as HTMLElement | null;
+      if (targetEl?.closest('input, textarea, select')) return;
+      if (scrollEl.scrollTop > 1) return;
+
+      const touch = ev.touches[0];
+      activeTouchId = touch.identifier;
+      startY = touch.clientY;
+      startX = touch.clientX;
+      abandoned = false;
+      session = null;
+    };
+
+    const onTouchMove = (ev: TouchEvent) => {
+      if (activeTouchId === null || abandoned) return;
+      const touch = findTouch(ev.touches, activeTouchId);
+      if (!touch) return;
+
+      if (!session) {
+        if (!isMobileExpandedRef.current || scrollEl.scrollTop > 1) {
+          abandoned = true;
+          return;
+        }
+        const dy = touch.clientY - startY;
+        const dx = touch.clientX - startX;
+        if (Math.abs(dy) < 7 && Math.abs(dx) < 7) return;
+        if (dy < 0 || Math.abs(dx) > Math.abs(dy) * 1.15) {
+          abandoned = true;
+          return;
+        }
+        session = createDragSession(touch.clientY, touch.clientX);
+        if (!session) {
+          abandoned = true;
+          return;
+        }
+      }
+
+      const status = session.move(touch.clientY, touch.clientX);
+      if (status === 'dragging' && ev.cancelable) {
+        ev.preventDefault();
+      } else if (status === 'cancel') {
+        abandoned = true;
+        session = null;
+      }
+    };
+
+    const onTouchEndOrCancel = (ev: TouchEvent) => {
+      if (activeTouchId === null) return;
+      if (findTouch(ev.touches, activeTouchId)) return;
+      activeTouchId = null;
+      if (session) {
+        session.end(ev.type === 'touchcancel');
+        session = null;
+      }
+    };
+
+    scrollEl.addEventListener('touchstart', onTouchStart, { passive: true });
+    scrollEl.addEventListener('touchmove', onTouchMove, { passive: false });
+    scrollEl.addEventListener('touchend', onTouchEndOrCancel, { passive: true });
+    scrollEl.addEventListener('touchcancel', onTouchEndOrCancel, { passive: true });
+
+    return () => {
+      scrollEl.removeEventListener('touchstart', onTouchStart);
+      scrollEl.removeEventListener('touchmove', onTouchMove);
+      scrollEl.removeEventListener('touchend', onTouchEndOrCancel);
+      scrollEl.removeEventListener('touchcancel', onTouchEndOrCancel);
+    };
+  }, [createDragSession]);
+
+  useEffect(() => {
+    return () => {
+      cleanupDragRef.current?.();
+    };
+  }, []);
 
   const distKm = routeData ? routeData.distanceKm : 0;
   const isMiles = unitSystem === 'mi';
@@ -189,7 +459,7 @@ export default function Sidebar({
         </div>
 
         {/* Scrollable Tab Content */}
-        <div className="flex-1 overflow-y-auto p-3.5 space-y-3 bg-white dark:bg-slate-900">
+        <div className="flex-1 overflow-y-auto overscroll-y-contain scroll-smooth p-3.5 space-y-3 bg-white dark:bg-slate-900">
           {currentMode === 'manual' && (
             <ManualMode
               key="manual-panel"
@@ -228,29 +498,49 @@ export default function Sidebar({
         </div>
       </aside>
 
-      {/* Mobile Scrim when Sheet Expanded */}
-      {isMobileExpanded && (
-        <div
-          aria-hidden="true"
-          onClick={() => setIsMobileExpanded(false)}
-          className="md:hidden fixed inset-0 bg-slate-950/35 z-[35] transition-opacity duration-200"
-        />
-      )}
-
-      {/* Mobile Collapsible Bottom Sheet Panel */}
+      {/* Mobile Scrim (Always mounted for smooth opacity fade + real-time drag sync) */}
       <div
-        className={`md:hidden fixed inset-x-0 bottom-0 z-40 transition-transform duration-[240ms] ease-[cubic-bezier(0.23,1,0.32,1)] ${
+        ref={scrimRef}
+        aria-hidden="true"
+        onClick={() => setIsMobileExpanded(false)}
+        className={`md:hidden fixed inset-0 bg-slate-950/35 z-[35] ui-scrim-fade ${
+          isMobileExpanded ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+      />
+
+      {/* Mobile Collapsible & Slidable Bottom Sheet Panel */}
+      <div
+        ref={sheetRef}
+        onClickCapture={(e) => {
+          if (suppressClickRef.current) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }}
+        className={`md:hidden fixed inset-x-0 bottom-0 z-40 ui-sheet-slide ${
           isMobileExpanded ? 'translate-y-0' : 'translate-y-[calc(100%-4.25rem)]'
         }`}
       >
         <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-t-2xl border-t border-slate-200 dark:border-slate-700 shadow-[0_-8px_30px_rgba(15,23,42,0.16)] dark:shadow-[0_-10px_32px_rgba(0,0,0,0.55)] overflow-hidden max-h-[82vh] flex flex-col">
-          {/* Subtle Sheet Drag Indicator */}
-          <div className="flex justify-center pt-1.5 pb-0.5 bg-white dark:bg-slate-900">
-            <span className="w-9 h-1 rounded-full bg-slate-300 dark:bg-slate-700" />
-          </div>
+          {/* Draggable Dock Header Wrapper (68px / 4.25rem) */}
+          <div
+            ref={dockHeaderRef}
+            onPointerDown={handleHeaderPointerDown}
+            className="touch-none select-none bg-white dark:bg-slate-900 cursor-grab active:cursor-grabbing shrink-0"
+          >
+            {/* Interactive Slide Handle Indicator */}
+            <button
+              type="button"
+              onClick={() => setIsMobileExpanded((open) => !open)}
+              aria-expanded={isMobileExpanded}
+              aria-label={isMobileExpanded ? 'Geser atau ketuk untuk menutup menu' : 'Geser atau ketuk untuk membuka menu'}
+              className="group w-full flex justify-center pt-2.5 pb-1 bg-white dark:bg-slate-900 ui-focus-ring"
+            >
+              <span className="w-10 h-1 rounded-full bg-slate-300 dark:bg-slate-600 transition-all duration-150 group-hover:bg-[#fc4c02] group-active:w-12" />
+            </button>
 
-          {/* Mobile Docked Bar Header */}
-          <div className="px-3 pb-2.5 pt-1 flex items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 select-none">
+            {/* Mobile Docked Bar Header */}
+            <div className="px-3 pb-2.5 pt-0.5 flex items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
             <button
               type="button"
               onClick={() => setIsMobileExpanded(!isMobileExpanded)}
@@ -352,9 +642,13 @@ export default function Sidebar({
               </button>
             </div>
           </div>
+          </div>
 
           {/* Mobile Mode Switcher + Dark Theme Toggle */}
-          <div className="flex items-center gap-1.5 p-2 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800">
+          <div
+            onPointerDown={handleHeaderPointerDown}
+            className="touch-none select-none flex items-center gap-1.5 p-2 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 shrink-0"
+          >
             <div className="relative grid grid-cols-2 p-0.5 rounded-xl bg-slate-200/75 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 flex-1">
               <span
                 aria-hidden="true"
@@ -402,7 +696,10 @@ export default function Sidebar({
           </div>
 
           {/* Mobile Scroll Content */}
-          <div className="overflow-y-auto p-4 space-y-3 max-h-[60vh]">
+          <div
+            ref={scrollContentRef}
+            className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain scroll-smooth p-4 space-y-3"
+          >
             {currentMode === 'manual' && (
               <ManualMode
                 waypoints={waypoints}
