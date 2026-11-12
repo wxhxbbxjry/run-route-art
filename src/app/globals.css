@@ -5,27 +5,62 @@
 @tailwind utilities;
 
 :root {
-  --background: #f1f5f9;
-  --foreground: #0f172a;
-  --strava-orange: #fc4c02;
-  --strava-orange-hover: #e34402;
-  --strava-orange-press: #c93b00;
-  --strava-green: #16a34a;
-  --ease-out-expo: cubic-bezier(0.23, 1, 0.32, 1);
+  --bg-canvas: #edf1f5;
+  --surface-elevated: rgba(255, 255, 255, 0.96);
+  --surface-solid: #ffffff;
+  --surface-subtle: #f5f7fa;
+  --surface-well: #e9eef4;
+  --border-subtle: rgba(15, 23, 42, 0.1);
+  --border-strong: rgba(15, 23, 42, 0.18);
+  --text-primary: #0b1220;
+  --text-secondary: #334155;
+  --text-muted: #526176;
+  --brand-accent: #fc4c02;
+  --brand-accent-hover: #e34402;
+  --brand-accent-press: #c23700;
+  --brand-ink: #b83400;
+  --brand-tint: rgba(252, 76, 2, 0.1);
+  --brand-border: rgba(252, 76, 2, 0.38);
+  --status-ok-bg: #ecfdf5;
+  --status-ok-border: #a7f3d0;
+  --status-ok-text: #047857;
+  --panel-shadow: 0 2px 6px rgba(15, 23, 42, 0.05), 0 18px 40px -12px rgba(15, 23, 42, 0.16);
+  --card-shadow: 0 2px 4px rgba(15, 23, 42, 0.04), 0 10px 24px -8px rgba(15, 23, 42, 0.12);
+  --ease-out-expo: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring-snappy: cubic-bezier(0.34, 1.45, 0.64, 1);
 }
 
 .dark {
-  --background: #0f172a;
-  --foreground: #f8fafc;
+  --bg-canvas: #070b14;
+  --surface-elevated: rgba(12, 18, 30, 0.96);
+  --surface-solid: #0c121e;
+  --surface-subtle: #141d2e;
+  --surface-well: #1b263b;
+  --border-subtle: rgba(148, 163, 184, 0.16);
+  --border-strong: rgba(148, 163, 184, 0.28);
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --brand-accent: #fc4c02;
+  --brand-accent-hover: #ff5c1a;
+  --brand-accent-press: #d94102;
+  --brand-ink: #ff8e5c;
+  --brand-tint: rgba(252, 76, 2, 0.16);
+  --brand-border: rgba(252, 76, 2, 0.45);
+  --status-ok-bg: rgba(6, 78, 59, 0.42);
+  --status-ok-border: rgba(52, 211, 153, 0.38);
+  --status-ok-text: #34d399;
+  --panel-shadow: 0 4px 12px rgba(0, 0, 0, 0.35), 0 24px 48px -12px rgba(0, 0, 0, 0.7);
+  --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.28), 0 14px 30px -8px rgba(0, 0, 0, 0.56);
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--text-primary);
+  background: var(--bg-canvas);
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   overflow: hidden;
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .tabular-nums {
@@ -38,23 +73,20 @@ body {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(241, 245, 249, 0.7);
-}
-.dark ::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.6);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: rgba(148, 163, 184, 0.45);
   border-radius: 9999px;
 }
 .dark ::-webkit-scrollbar-thumb {
-  background: rgba(71, 85, 105, 0.7);
+  background: rgba(100, 116, 139, 0.55);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.7);
+  background: rgba(100, 116, 139, 0.75);
 }
 
-/* MapLibre GL clean map canvas */
+/* MapLibre GL canvas */
 .maplibregl-map {
   width: 100%;
   height: 100%;
@@ -70,10 +102,10 @@ body {
   cursor: crosshair;
 }
 
-/* Reposition bottom-left controls (Scale Bar & Attribution) out of Sidebar & Mobile bar paths */
+/* Reposition bottom-left controls outside Sidebar & Mobile bottom bar */
 .maplibregl-ctrl-bottom-left {
-  left: 10px !important;
-  bottom: 74px !important;
+  left: 12px !important;
+  bottom: 84px !important;
   display: flex !important;
   flex-direction: column-reverse !important;
   align-items: flex-start !important;
@@ -89,114 +121,81 @@ body {
 
 @media (min-width: 768px) {
   .maplibregl-ctrl-bottom-left {
-    left: 350px !important;
-    bottom: 16px !important;
-    max-width: calc(100vw - 680px);
+    left: 356px !important;
+    bottom: 18px !important;
+    max-width: calc(100vw - 440px);
   }
 }
 
-@media (min-width: 1024px) {
+@media (min-width: 1280px) {
   .maplibregl-ctrl-bottom-left {
-    left: 432px !important;
-    bottom: 16px !important;
-    max-width: calc(100vw - 850px);
+    left: 422px !important;
+    bottom: 18px !important;
+    max-width: calc(100vw - 520px);
   }
 }
 
-/* Clean Strava Athlete Styling for MapLibre Attribution */
+/* Attribution Pill */
 .maplibregl-ctrl-attrib {
-  background: rgba(255, 255, 255, 0.92) !important;
-  color: #334155 !important;
+  background: var(--surface-elevated) !important;
+  color: var(--text-secondary) !important;
   font-size: 10px !important;
-  border: 1px solid rgba(203, 213, 225, 0.9) !important;
+  border: 1px solid var(--border-subtle) !important;
   border-radius: 9999px !important;
   box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
 }
 
-.dark .maplibregl-ctrl-attrib {
-  background: rgba(15, 23, 42, 0.92) !important;
-  color: #cbd5e1 !important;
-  border: 1px solid rgba(51, 65, 85, 0.9) !important;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
-}
-
 .maplibregl-ctrl-attrib a {
-  color: #fc4c02 !important;
-  font-weight: 600;
+  color: var(--brand-ink) !important;
+  font-weight: 700;
 }
 
 .dark .maplibregl-ctrl-attrib-button {
   filter: invert(0.9);
 }
 
-/* Clean Strava Scale Bar */
+/* Scale Bar */
 .maplibregl-ctrl-scale {
-  background: rgba(255, 255, 255, 0.94) !important;
-  color: #1e293b !important;
-  border-color: #fc4c02 !important;
+  background: var(--surface-elevated) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--brand-accent) !important;
   border-width: 0 2px 2.5px 2px !important;
   font-size: 10px !important;
   font-weight: 800 !important;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
-  padding: 1px 7px !important;
-  border-radius: 0 0 4px 4px !important;
+  font-family: var(--font-mono), ui-monospace, monospace !important;
+  padding: 2px 8px !important;
+  border-radius: 0 0 6px 6px !important;
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
 }
 
-.dark .maplibregl-ctrl-scale {
-  background: rgba(15, 23, 42, 0.92) !important;
-  color: #f1f5f9 !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-}
-
-/* Clean Strava Light & Dark Popups */
+/* MapLibre Popups */
 .maplibregl-popup {
   z-index: 25;
 }
 
 .maplibregl-popup-content {
-  background: rgba(255, 255, 255, 0.98) !important;
-  color: #0f172a !important;
-  border-radius: 12px !important;
-  border: 1px solid rgba(226, 232, 240, 1) !important;
-  box-shadow: 0 12px 28px -6px rgba(15, 23, 42, 0.22) !important;
-  padding: 9px 12px !important;
-}
-
-.dark .maplibregl-popup-content {
-  background: rgba(15, 23, 42, 0.97) !important;
-  color: #f8fafc !important;
-  border: 1px solid rgba(51, 65, 85, 0.9) !important;
-  box-shadow: 0 12px 28px -6px rgba(0, 0, 0, 0.5) !important;
+  background: var(--surface-solid) !important;
+  color: var(--text-primary) !important;
+  border-radius: 14px !important;
+  border: 1px solid var(--border-subtle) !important;
+  box-shadow: var(--card-shadow) !important;
+  padding: 10px 13px !important;
 }
 
 .maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
-  border-top-color: rgba(255, 255, 255, 0.98) !important;
+  border-top-color: var(--surface-solid) !important;
 }
 .maplibregl-popup-anchor-top .maplibregl-popup-tip {
-  border-bottom-color: rgba(255, 255, 255, 0.98) !important;
+  border-bottom-color: var(--surface-solid) !important;
 }
 .maplibregl-popup-anchor-left .maplibregl-popup-tip {
-  border-right-color: rgba(255, 255, 255, 0.98) !important;
+  border-right-color: var(--surface-solid) !important;
 }
 .maplibregl-popup-anchor-right .maplibregl-popup-tip {
-  border-left-color: rgba(255, 255, 255, 0.98) !important;
+  border-left-color: var(--surface-solid) !important;
 }
 
-.dark .maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
-  border-top-color: rgba(15, 23, 42, 0.97) !important;
-}
-.dark .maplibregl-popup-anchor-top .maplibregl-popup-tip {
-  border-bottom-color: rgba(15, 23, 42, 0.97) !important;
-}
-.dark .maplibregl-popup-anchor-left .maplibregl-popup-tip {
-  border-right-color: rgba(15, 23, 42, 0.97) !important;
-}
-.dark .maplibregl-popup-anchor-right .maplibregl-popup-tip {
-  border-left-color: rgba(15, 23, 42, 0.97) !important;
-}
-
-/* Strava Signature Route Pins */
+/* Route Markers */
 .custom-pin-start {
   display: flex;
   align-items: center;
@@ -204,13 +203,13 @@ body {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: #16a34a;
+  background: #10b981;
   color: #ffffff;
   font-weight: 900;
   font-size: 12px;
-  box-shadow: 0 3px 10px rgba(22, 163, 74, 0.45), 0 2px 6px rgba(15, 23, 42, 0.35);
+  box-shadow: 0 3px 10px rgba(16, 185, 129, 0.45), 0 2px 6px rgba(15, 23, 42, 0.35);
   border: 2.5px solid #ffffff;
-  transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 0.16s var(--ease-spring-snappy);
   cursor: grab;
 }
 
@@ -222,18 +221,18 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 8px;
+  padding: 0 9px;
   height: 28px;
   border-radius: 9999px;
-  background: linear-gradient(135deg, #16a34a 0%, #16a34a 49%, #1e293b 51%, #1e293b 100%);
+  background: linear-gradient(135deg, #10b981 0%, #10b981 48%, #0f172a 52%, #0f172a 100%);
   color: #ffffff;
   font-weight: 900;
   font-size: 11px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
   box-shadow: 0 3px 10px rgba(15, 23, 42, 0.35);
   border: 2.5px solid #ffffff;
-  transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 0.16s var(--ease-spring-snappy);
   cursor: grab;
 }
 
@@ -262,19 +261,18 @@ body {
   transform: scale(1.16);
 }
 
-/* Strava-style crisp white dot with orange border */
 .custom-pin-waypoint {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 19px;
+  height: 19px;
   border-radius: 50%;
   background: #ffffff;
   color: #fc4c02;
   font-weight: 900;
   font-size: 9px;
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.35);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.38);
   border: 2.5px solid #fc4c02;
   transition:
     transform 0.15s var(--ease-spring-snappy),
@@ -296,87 +294,69 @@ body {
   cursor: grabbing;
 }
 
-/* Crisp Strava-style Kilometer / Milepost Markers */
+/* Kilometer / Milepost Markers */
 .milepost-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 1px 6px;
+  padding: 2px 7px;
   border-radius: 9999px;
-  background: #0f172a;
+  background: #0b1220;
   border: 1.5px solid #ffffff;
   color: #ffffff;
-  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 10px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   line-height: 1.3;
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.35);
+  box-shadow: 0 2px 7px rgba(15, 23, 42, 0.4);
   pointer-events: none;
   white-space: nowrap;
 }
 
-/* Clean Strava Panel Surfaces (Light & Dark, single cool-neutral family, no WebGL blur glitches) */
-.sidebar-panel {
-  background: rgba(255, 255, 255, 0.98);
-  border: 1px solid rgba(226, 232, 240, 0.95);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 16px 36px -8px rgba(15, 23, 42, 0.14);
+/* Architectural Surfaces */
+.cockpit-panel {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--panel-shadow);
   isolation: isolate;
 }
 
-.dark .sidebar-panel {
-  background: rgba(15, 23, 42, 0.98);
-  border: 1px solid rgba(51, 65, 85, 0.85);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25), 0 18px 40px -8px rgba(0, 0, 0, 0.55);
+.dark .cockpit-panel {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    var(--panel-shadow);
+}
+
+.cockpit-card {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--card-shadow);
   isolation: isolate;
 }
 
-.strava-card {
-  background: rgba(255, 255, 255, 0.97);
-  border: 1px solid rgba(226, 232, 240, 0.95);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 22px -5px rgba(15, 23, 42, 0.11);
+.dark .cockpit-card {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    var(--card-shadow);
 }
 
-.dark .strava-card {
-  background: rgba(15, 23, 42, 0.97);
-  border: 1px solid rgba(51, 65, 85, 0.85);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2), 0 12px 26px -6px rgba(0, 0, 0, 0.48);
+.cockpit-well {
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-subtle);
 }
 
-.glass-panel {
-  background: rgba(255, 255, 255, 0.97);
-  border: 1px solid rgba(226, 232, 240, 0.95);
-}
-
-.dark .glass-panel {
-  background: rgba(15, 23, 42, 0.97);
-  border: 1px solid rgba(51, 65, 85, 0.85);
-}
-
-.glass-pill {
-  background: rgba(255, 255, 255, 0.97);
-  border: 1px solid rgba(226, 232, 240, 0.95);
-}
-
-.dark .glass-pill {
-  background: rgba(15, 23, 42, 0.97);
-  border: 1px solid rgba(51, 65, 85, 0.85);
-}
-
-/* ============================================================================
-   UI Taste & Athletic Micro-interaction Grammar (Single Ease-Out Curve)
-   ============================================================================ */
-
-/* Primary CTA Button with subtle athletic sheen & tactile press-in */
+/* Micro-interaction Primitives */
 .ui-btn-primary {
   position: relative;
   overflow: hidden;
+  touch-action: manipulation;
   transition:
     transform 140ms var(--ease-out-expo),
     background-color 150ms ease,
     box-shadow 180ms var(--ease-out-expo),
     opacity 150ms ease;
-  box-shadow: 0 2px 4px rgba(252, 76, 2, 0.18), 0 6px 14px -4px rgba(252, 76, 2, 0.34);
+  box-shadow: 0 2px 6px rgba(252, 76, 2, 0.22), 0 8px 18px -4px rgba(252, 76, 2, 0.36);
 }
 
 .ui-btn-primary::after {
@@ -391,7 +371,7 @@ body {
 
 .ui-btn-primary:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 3px 6px rgba(252, 76, 2, 0.22), 0 10px 20px -5px rgba(252, 76, 2, 0.42);
+  box-shadow: 0 4px 10px rgba(252, 76, 2, 0.26), 0 12px 24px -5px rgba(252, 76, 2, 0.44);
 }
 
 .ui-btn-primary:hover:not(:disabled)::after {
@@ -400,12 +380,12 @@ body {
 
 .ui-btn-primary:active:not(:disabled) {
   transform: translateY(0) scale(0.97);
-  box-shadow: 0 1px 3px rgba(252, 76, 2, 0.25);
+  box-shadow: 0 1px 3px rgba(252, 76, 2, 0.28);
   transition-duration: 90ms;
 }
 
-/* Secondary / Neutral Action Button */
 .ui-btn-secondary {
+  touch-action: manipulation;
   transition:
     transform 130ms var(--ease-out-expo),
     background-color 150ms ease,
@@ -417,11 +397,11 @@ body {
 
 .ui-btn-secondary:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 3px 8px -2px rgba(15, 23, 42, 0.1);
+  box-shadow: 0 4px 10px -3px rgba(15, 23, 42, 0.12);
 }
 
 .dark .ui-btn-secondary:hover:not(:disabled) {
-  box-shadow: 0 4px 10px -2px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.42);
 }
 
 .ui-btn-secondary:active:not(:disabled) {
@@ -429,22 +409,22 @@ body {
   transition-duration: 90ms;
 }
 
-/* Interactive Card Lift (Preset Cards, Saved Routes, Layer Choices, Dock Controls) */
 .ui-card-hover {
+  touch-action: manipulation;
   transition:
-    transform 170ms var(--ease-out-expo),
-    border-color 170ms ease,
-    background-color 170ms ease,
-    box-shadow 200ms var(--ease-out-expo);
+    transform 160ms var(--ease-out-expo),
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 190ms var(--ease-out-expo);
 }
 
 .ui-card-hover:hover:not(:disabled) {
   transform: translateY(-1.5px);
-  box-shadow: 0 6px 16px -4px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 6px 18px -4px rgba(15, 23, 42, 0.12);
 }
 
 .dark .ui-card-hover:hover:not(:disabled) {
-  box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 8px 22px -4px rgba(0, 0, 0, 0.5);
 }
 
 .ui-card-hover:active:not(:disabled) {
@@ -452,22 +432,18 @@ body {
   transition-duration: 90ms;
 }
 
-/* Focus-visible accessibility ring */
+/* High-contrast focus ring (WCAG 2.2 AA/AAA visible indicator) */
 .ui-focus-ring:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #fc4c02;
+  box-shadow: 0 0 0 2px var(--surface-solid), 0 0 0 4.5px #fc4c02;
 }
 
-.dark .ui-focus-ring:focus-visible {
-  box-shadow: 0 0 0 2px #0f172a, 0 0 0 4px #fc4c02;
-}
-
-/* Custom Athletic Range Slider */
+/* Athletic Range Slider */
 .strava-slider {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 6px;
+  height: 7px;
   border-radius: 9999px;
   background: linear-gradient(
     to right,
@@ -478,7 +454,6 @@ body {
   );
   outline: none;
   cursor: pointer;
-  transition: height 150ms ease;
 }
 
 .dark .strava-slider {
@@ -486,26 +461,26 @@ body {
     to right,
     #fc4c02 0%,
     #fc4c02 var(--slider-progress, 50%),
-    #334155 var(--slider-progress, 50%),
-    #334155 100%
+    #283548 var(--slider-progress, 50%),
+    #283548 100%
   );
 }
 
 .strava-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 9999px;
   background: #fc4c02;
-  border: 2.5px solid #ffffff;
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.28);
+  border: 3px solid #ffffff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.3);
   transition: transform 150ms var(--ease-spring-snappy), box-shadow 150ms ease;
 }
 
 .strava-slider:hover::-webkit-slider-thumb {
   transform: scale(1.14);
-  box-shadow: 0 3px 10px rgba(252, 76, 2, 0.42);
+  box-shadow: 0 4px 12px rgba(252, 76, 2, 0.45);
 }
 
 .strava-slider:active::-webkit-slider-thumb {
@@ -517,16 +492,16 @@ body {
 }
 
 .strava-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 9999px;
   background: #fc4c02;
-  border: 2.5px solid #ffffff;
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.28);
+  border: 3px solid #ffffff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.3);
   transition: transform 150ms var(--ease-spring-snappy), box-shadow 150ms ease;
 }
 
-/* Entrance & Feedback Keyframes (under 300ms, GPU transform + opacity only) */
+/* Entrance & Feedback Keyframes */
 @keyframes uiFadeSlideUp {
   from {
     opacity: 0;
@@ -624,7 +599,7 @@ body {
   animation: uiLoadingSlide 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
-/* Smooth GPU-composited bottom drawer slide & scrim fade */
+/* Smooth GPU-composited bottom sheet slide & scrim fade */
 .ui-sheet-slide {
   transition: transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;

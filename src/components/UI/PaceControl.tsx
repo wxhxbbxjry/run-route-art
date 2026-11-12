@@ -53,8 +53,8 @@ export default function PaceControl({
   };
 
   return (
-    <div className="space-y-2.5">
-      {/* Stepper + Current Pace Readout (Single clean source of truth) */}
+    <div className="space-y-3">
+      {/* Stepper + Current Pace Hero Readout */}
       <div className="flex items-center justify-between gap-2">
         <button
           type="button"
@@ -63,24 +63,27 @@ export default function PaceControl({
           onClick={() => handleStep(-PACE_STEP_SEC)}
           title="Percepat pace 5 detik"
           aria-label="Percepat pace 5 detik"
-          className="h-8 px-2.5 rounded-lg bg-white dark:bg-slate-900 hover:bg-orange-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 hover:text-[#fc4c02] border border-slate-200 dark:border-slate-700 flex items-center gap-1 text-[11px] font-bold disabled:opacity-40 disabled:pointer-events-none ui-btn-secondary ui-focus-ring"
+          className="min-h-[44px] md:min-h-[36px] px-3 rounded-xl bg-[var(--surface-solid)] hover:bg-[var(--brand-tint)] text-[var(--text-primary)] hover:text-[var(--brand-ink)] border border-[var(--border-subtle)] hover:border-[var(--brand-border)] flex items-center gap-1.5 text-xs font-bold disabled:opacity-40 disabled:pointer-events-none ui-btn-secondary ui-focus-ring"
         >
-          <Minus className="w-3.5 h-3.5" />
+          <Minus className="w-3.5 h-3.5" aria-hidden="true" />
           <span className="tabular-nums font-mono">5s</span>
         </button>
 
         <div className="flex flex-col items-center text-center min-w-0">
           <div className="flex items-baseline gap-1">
-            <span className="text-base font-black font-mono text-[#fc4c02] tabular-nums leading-none">
+            <span className="text-2xl font-display font-extrabold tracking-tight text-[#fc4c02] tabular-nums leading-none">
               {formatPaceValue(paceSeconds, unitSystem)}
             </span>
-            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+            <span className="text-[11px] font-bold text-[var(--text-muted)]">
               {unitLabel}
             </span>
           </div>
           {estimatedTimeFormatted && (
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium tabular-nums mt-0.5">
-              Est. Waktu: <strong className="text-slate-800 dark:text-slate-200 font-mono">{estimatedTimeFormatted}</strong>
+            <span className="text-[11px] text-[var(--text-muted)] font-medium tabular-nums mt-0.5">
+              Est. Waktu:{' '}
+              <strong className="text-[var(--text-primary)] font-mono">
+                {estimatedTimeFormatted}
+              </strong>
             </span>
           )}
         </div>
@@ -92,15 +95,15 @@ export default function PaceControl({
           onClick={() => handleStep(PACE_STEP_SEC)}
           title="Perlambat pace 5 detik"
           aria-label="Perlambat pace 5 detik"
-          className="h-8 px-2.5 rounded-lg bg-white dark:bg-slate-900 hover:bg-orange-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 hover:text-[#fc4c02] border border-slate-200 dark:border-slate-700 flex items-center gap-1 text-[11px] font-bold disabled:opacity-40 disabled:pointer-events-none ui-btn-secondary ui-focus-ring"
+          className="min-h-[44px] md:min-h-[36px] px-3 rounded-xl bg-[var(--surface-solid)] hover:bg-[var(--brand-tint)] text-[var(--text-primary)] hover:text-[var(--brand-ink)] border border-[var(--border-subtle)] hover:border-[var(--brand-border)] flex items-center gap-1.5 text-xs font-bold disabled:opacity-40 disabled:pointer-events-none ui-btn-secondary ui-focus-ring"
         >
-          <Plus className="w-3.5 h-3.5" />
+          <Plus className="w-3.5 h-3.5" aria-hidden="true" />
           <span className="tabular-nums font-mono">5s</span>
         </button>
       </div>
 
       {/* Slider + Clear Min / Max Bounds */}
-      <div className="space-y-1">
+      <div className="space-y-1.5">
         <input
           type="range"
           min={PACE_MIN_SEC}
@@ -113,14 +116,14 @@ export default function PaceControl({
           style={{ '--slider-progress': `${sliderProgress}%` } as React.CSSProperties}
           className="strava-slider"
         />
-        <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono font-medium tabular-nums">
+        <div className="flex justify-between text-[11px] text-[var(--text-muted)] font-mono font-medium tabular-nums">
           <span>{formatPaceValue(PACE_MIN_SEC, unitSystem)} Cepat</span>
           <span>{formatPaceValue(PACE_MAX_SEC, unitSystem)} Santai</span>
         </div>
       </div>
 
-      {/* Crisp 5-Column Preset Chips */}
-      <div className="grid grid-cols-5 gap-1">
+      {/* 5-Column Preset Chips (with 44px mobile touch height) */}
+      <div className="grid grid-cols-5 gap-1.5">
         {PACE_PRESETS.map((preset) => {
           const isActive = paceSeconds === preset.pace;
           return (
@@ -130,18 +133,20 @@ export default function PaceControl({
               tabIndex={tabIdx}
               aria-pressed={isActive}
               onClick={() => onPaceChange(preset.pace)}
-              className={`py-1.5 px-0.5 rounded-lg border text-center flex flex-col items-center justify-center ui-card-hover ui-focus-ring ${
+              className={`min-h-[44px] md:min-h-[40px] py-1.5 px-1 rounded-xl border text-center flex flex-col items-center justify-center ui-card-hover ui-focus-ring ${
                 isActive
-                  ? 'bg-orange-50 dark:bg-orange-950/60 text-[#c93b00] dark:text-orange-300 border-[#fc4c02] shadow-[0_2px_6px_rgba(252,76,2,0.14)]'
-                  : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-orange-300 dark:hover:border-orange-500/40'
+                  ? 'bg-[var(--brand-tint)] text-[var(--brand-ink)] border-[#fc4c02] shadow-[0_2px_8px_rgba(252,76,2,0.16)]'
+                  : 'bg-[var(--surface-solid)] text-[var(--text-primary)] border-[var(--border-subtle)] hover:border-[var(--brand-border)]'
               }`}
             >
-              <span className="text-[11px] font-black font-mono tabular-nums leading-tight">
+              <span className="text-xs font-extrabold font-mono tabular-nums leading-tight">
                 {formatPaceValue(preset.pace, unitSystem)}
               </span>
               <span
-                className={`text-[9px] leading-tight mt-0.5 truncate max-w-full ${
-                  isActive ? 'font-bold text-[#c93b00] dark:text-orange-300' : 'text-slate-500 dark:text-slate-400 font-medium'
+                className={`text-[10px] leading-tight mt-0.5 truncate max-w-full ${
+                  isActive
+                    ? 'font-bold text-[var(--brand-ink)]'
+                    : 'text-[var(--text-muted)] font-medium'
                 }`}
               >
                 {preset.label}

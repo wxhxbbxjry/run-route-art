@@ -22,7 +22,7 @@ export default function Toast({ toasts, onDismiss }: ToastProps) {
     <div
       role="status"
       aria-live="polite"
-      className="fixed top-[70px] right-[60px] md:top-4 md:right-[72px] z-50 flex flex-col gap-2 max-w-xs w-[calc(100%-4.5rem)] md:w-80 pointer-events-none"
+      className="fixed top-[76px] right-[68px] md:top-auto md:bottom-5 md:right-5 z-50 flex flex-col gap-2 max-w-xs w-[calc(100%-5.25rem)] md:w-80 pointer-events-none"
     >
       {toasts.map((toast) => {
         const accentStripe =
@@ -46,9 +46,9 @@ export default function Toast({ toasts, onDismiss }: ToastProps) {
         return (
           <div
             key={toast.id}
-            className={`pointer-events-auto relative overflow-hidden p-3.5 rounded-2xl strava-card border border-l-4 flex items-start gap-3 ui-toast-enter ui-toast-card ${accentStripe}`}
+            className={`pointer-events-auto relative overflow-hidden p-3.5 rounded-2xl cockpit-card border border-l-4 flex items-start gap-3 ui-toast-enter ui-toast-card ${accentStripe}`}
           >
-            <div className="mt-0.5 shrink-0">
+            <div className="mt-0.5 shrink-0" aria-hidden="true">
               {toast.type === 'success' && (
                 <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
               )}
@@ -62,11 +62,11 @@ export default function Toast({ toasts, onDismiss }: ToastProps) {
             </div>
 
             <div className="flex-1 text-xs min-w-0">
-              <h4 className="font-bold text-slate-900 dark:text-white leading-tight">
+              <h4 className="font-extrabold text-[var(--text-primary)] leading-tight">
                 {toast.title}
               </h4>
               {toast.description && (
-                <p className="text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
+                <p className="text-[var(--text-secondary)] mt-0.5 leading-relaxed">
                   {toast.description}
                 </p>
               )}
@@ -76,9 +76,9 @@ export default function Toast({ toasts, onDismiss }: ToastProps) {
               type="button"
               aria-label="Tutup notifikasi"
               onClick={() => onDismiss(toast.id)}
-              className="text-slate-400 hover:text-slate-800 dark:hover:text-white p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0 ui-btn-secondary ui-focus-ring"
+              className="w-7 h-7 flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] rounded-lg hover:bg-[var(--surface-well)] shrink-0 ui-btn-secondary ui-focus-ring"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" aria-hidden="true" />
             </button>
 
             <span

@@ -35,7 +35,6 @@ import {
 interface RouteMapProps {
   waypoints: Waypoint[];
   routeData: RouteData | null;
-  peekRouteData?: RouteData | null;
   editableAnchors?: LatLng[];
   requestedStartLocation?: LatLng | null;
   routeMode: RouteMode;
@@ -239,7 +238,6 @@ function findFirstSymbolLayerId(map: maplibregl.Map): string | undefined {
 export default function RouteMap({
   waypoints,
   routeData,
-  peekRouteData = null,
   editableAnchors = [],
   requestedStartLocation = null,
   routeMode,
@@ -273,7 +271,6 @@ export default function RouteMap({
   const onUserLocationDetectedRef = useRef(onUserLocationDetected);
   const onAnchorInsertRef = useRef(onAnchorInsert);
   const routeDataRef = useRef(routeData);
-  const peekRouteDataRef = useRef(peekRouteData);
   const editableAnchorsRef = useRef(editableAnchors);
   const requestedStartLocationRef = useRef(requestedStartLocation);
   const waypointsRef = useRef(waypoints);
@@ -311,10 +308,6 @@ export default function RouteMap({
   useEffect(() => {
     routeDataRef.current = routeData;
   }, [routeData]);
-
-  useEffect(() => {
-    peekRouteDataRef.current = peekRouteData;
-  }, [peekRouteData]);
 
   useEffect(() => {
     editableAnchorsRef.current = editableAnchors;
@@ -372,32 +365,32 @@ export default function RouteMap({
     };
   }, [showLayerPicker]);
 
-  // Responsive viewport padding outside Sidebar, MobileTopHud, Right Dock & Bottom HUDs
+  // Responsive viewport padding outside Left Rail, Top Telemetry Bar, Right Dock & Mobile Sheet
   const getViewportPadding = useCallback((): PaddingOptions => {
     if (typeof window === 'undefined') {
-      return { top: 24, bottom: 130, left: 436, right: 96 };
+      return { top: 96, bottom: 48, left: 424, right: 96 };
     }
-    if (window.innerWidth >= 1024) {
+    if (window.innerWidth >= 1280) {
       return {
-        top: 24,
-        bottom: 140,
-        left: 436,
-        right: 110,
+        top: 96,
+        bottom: 52,
+        left: 424,
+        right: 96,
       };
     }
     if (window.innerWidth >= 768) {
       return {
-        top: 24,
-        bottom: 130,
-        left: 350,
-        right: 96,
+        top: 96,
+        bottom: 48,
+        left: 356,
+        right: 90,
       };
     }
     return {
-      top: 72,
-      bottom: 96,
+      top: 78,
+      bottom: 98,
       left: 16,
-      right: 64,
+      right: 68,
     };
   }, []);
 
@@ -595,36 +588,7 @@ export default function RouteMap({
       });
     }
 
-    // 3b. RunCulture Candidate Hover-Peek Ghost Layer (Dashed Sky-Blue)
-    if (!map.getSource('route-peek')) {
-      map.addSource('route-peek', {
-        type: 'geojson',
-        data: buildFullRouteLineGeoJson(peekRouteDataRef.current),
-      });
-    } else {
-      const peekSrc = map.getSource('route-peek') as GeoJSONSource | undefined;
-      peekSrc?.setData(buildFullRouteLineGeoJson(peekRouteDataRef.current));
-    }
-
-    if (!map.getLayer('route-peek-line')) {
-      map.addLayer({
-        id: 'route-peek-line',
-        type: 'line',
-        source: 'route-peek',
-        layout: {
-          'line-cap': 'round',
-          'line-join': 'round',
-        },
-        paint: {
-          'line-color': '#0ea5e9',
-          'line-width': 3.6,
-          'line-opacity': 0.88,
-          'line-dasharray': [2.2, 2.2],
-        },
-      });
-    }
-
-    // 3c. Snap Connector Line (requestedStartLocation -> actual vehicle road start if > 12m)
+    // 3b. Snap Connector Line (requestedStartLocation -> actual vehicle road start if > 12m)
     if (!map.getSource('route-start-connector')) {
       map.addSource('route-start-connector', {
         type: 'geojson',
@@ -1063,14 +1027,6 @@ export default function RouteMap({
       previewSrc?.setData(buildPreviewGeoJson(null, null));
     }
   }, [routeMode, waypoints]);
-
-  // Update ghost hover-peek route immediately when hovering candidates
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    const peekSrc = map.getSource('route-peek') as GeoJSONSource | undefined;
-    peekSrc?.setData(buildFullRouteLineGeoJson(peekRouteData));
-  }, [peekRouteData]);
 
   // Update gradient polyline + direction arrow + connector
   useEffect(() => {
@@ -1548,8 +1504,8 @@ export default function RouteMap({
         className={`w-full h-full z-0 ${routeMode === 'manual' ? 'manual-cursor-mode' : ''}`}
       />
 
-      {/* Right Floating Strava Map Controls Dock */}
-      <div className="absolute right-3 md:right-4 top-[70px] md:top-4 flex flex-col gap-2 z-20 md:z-40">
+      {/* Right Floating Map Controls Dock (44px+ WCAG touch targets) */}
+      <div className="absolute right-3 md:right-4 top-[76px] md:top-4 flex flex-col gap-2 z-20 md:z-40">
         {/* Map Settings, Basemap Switcher & Heatmap Toggle */}
         <div ref={layerPickerContainerRef} className="relative">
           <button
@@ -1558,38 +1514,43 @@ export default function RouteMap({
             aria-expanded={showLayerPicker}
             aria-label="Pengaturan Peta & Layer"
             title="Pengaturan Peta & Layer"
-            className={`group w-10 h-10 md:w-11 md:h-11 rounded-xl strava-card flex items-center justify-center relative ui-card-hover ui-focus-ring ${
+            className={`group w-11 h-11 rounded-xl cockpit-card flex items-center justify-center relative ui-card-hover ui-focus-ring ${
               showLayerPicker
-                ? 'text-[#fc4c02] border-[#fc4c02] bg-orange-50 dark:bg-orange-950/60'
-                : 'text-slate-700 dark:text-slate-200 hover:text-[#fc4c02] hover:bg-white dark:hover:bg-slate-800 hover:border-orange-300 dark:hover:border-orange-500/40'
+                ? 'text-[#fc4c02] border-[#fc4c02] bg-[var(--brand-tint)]'
+                : 'text-[var(--text-primary)] hover:text-[#fc4c02] hover:border-[var(--brand-border)]'
             }`}
           >
-            <Layers className="w-4 h-4 md:w-5 md:h-5 transition-transform duration-150 group-hover:scale-110" />
+            <Layers
+              className="w-5 h-5 transition-transform duration-150 group-hover:scale-110"
+              aria-hidden="true"
+            />
             {showHeatmap && (
               <span
                 title="Heatmap Lari Aktif"
-                className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#fc4c02] border-2 border-white dark:border-slate-900 shadow-sm"
+                className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#fc4c02] border-2 border-[var(--surface-solid)] shadow-sm"
               />
             )}
           </button>
 
           {showLayerPicker && (
-            <div className="absolute right-12 md:right-14 top-0 w-72 max-h-[calc(100vh-156px)] md:max-h-[calc(100vh-110px)] overflow-y-auto rounded-2xl strava-card p-2.5 shadow-2xl z-50 space-y-2 ui-popover-right-enter text-slate-900 dark:text-slate-100">
-              <div className="flex items-center justify-between px-1 pb-1.5 border-b border-slate-100 dark:border-slate-800">
+            <div className="absolute right-[52px] md:right-14 top-0 w-[276px] md:w-72 max-h-[calc(100dvh-170px)] md:max-h-[calc(100vh-110px)] overflow-y-auto rounded-2xl cockpit-card p-3 z-50 space-y-2.5 ui-popover-right-enter text-[var(--text-primary)]">
+              <div className="flex items-center justify-between px-1 pb-2 border-b border-[var(--border-subtle)]">
                 <div>
-                  <p className="text-[11px] uppercase font-extrabold tracking-wider text-slate-900 dark:text-white">
+                  <p className="text-xs uppercase font-extrabold tracking-wider text-[var(--text-primary)]">
                     Pengaturan Peta
                   </p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400">100% Free &bull; Tanpa API Key</p>
+                  <p className="text-[11px] text-[var(--text-muted)]">100% Free &bull; Tanpa API Key</p>
                 </div>
-                <span className="text-[10px] font-mono tabular-nums px-2 py-0.5 rounded-lg bg-orange-50 dark:bg-orange-950/60 text-[#fc4c02] border border-orange-200 dark:border-orange-500/40 font-bold">
+                <span className="text-[11px] font-mono tabular-nums px-2 py-0.5 rounded-lg bg-[var(--brand-tint)] text-[var(--brand-ink)] border border-[var(--brand-border)] font-bold">
                   z{Math.round(zoomLevel)}
                 </span>
               </div>
 
               {/* Basemap Grid Selector */}
               <div className="space-y-1">
-                <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase px-1">Tipe Peta</p>
+                <p className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wider px-1">
+                  Tipe Peta
+                </p>
                 {Object.values(TILE_LAYERS).map((layer) => {
                   const isActive = selectedTile === layer.id;
                   return (
@@ -1601,13 +1562,14 @@ export default function RouteMap({
                       }}
                       className={`group w-full text-left px-2.5 py-2 rounded-xl flex items-start gap-2.5 ui-card-hover ui-focus-ring border ${
                         isActive
-                          ? 'bg-orange-50/90 dark:bg-orange-950/50 text-[#c93b00] dark:text-orange-300 border-orange-300 dark:border-orange-500/50'
-                          : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/80 border-transparent hover:border-slate-200 dark:hover:border-slate-700'
+                          ? 'bg-[var(--brand-tint)] text-[var(--brand-ink)] border-[var(--brand-border)]'
+                          : 'text-[var(--text-primary)] hover:bg-[var(--surface-well)] border-transparent hover:border-[var(--border-subtle)]'
                       }`}
                     >
                       <span
-                        className="w-3.5 h-3.5 rounded-full border border-black/15 dark:border-white/25 shrink-0 mt-0.5 shadow-sm transition-transform duration-150 group-hover:scale-110"
+                        className="w-3.5 h-3.5 rounded-full border border-black/20 dark:border-white/30 shrink-0 mt-0.5 shadow-sm transition-transform duration-150 group-hover:scale-110"
                         style={{ backgroundColor: layer.swatch }}
+                        aria-hidden="true"
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-1">
@@ -1621,7 +1583,7 @@ export default function RouteMap({
                             }`}
                           />
                         </div>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight mt-0.5">
+                        <p className="text-[11px] text-[var(--text-muted)] leading-tight mt-0.5">
                           {layer.description}
                         </p>
                       </div>
@@ -1630,54 +1592,60 @@ export default function RouteMap({
                 })}
               </div>
 
-              {/* Strava Layer Overlays */}
-              <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
-                <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase px-1">Layer &amp; Sistem</p>
+              {/* Layer Overlays */}
+              <div className="pt-2 border-t border-[var(--border-subtle)] space-y-2">
+                <p className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wider px-1">
+                  Layer &amp; Sistem
+                </p>
 
-                {/* Free Popular Running Heatmap Toggle (Default OFF) */}
+                {/* Free Popular Running Heatmap Toggle */}
                 <button
                   type="button"
                   role="switch"
                   aria-checked={showHeatmap}
                   onClick={() => setShowHeatmap((v) => !v)}
-                  className="group w-full px-2.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700 flex items-center justify-between gap-2 text-left ui-card-hover ui-focus-ring"
+                  className="group w-full min-h-[44px] px-2.5 py-2 rounded-xl bg-[var(--surface-well)] hover:bg-[var(--brand-tint)] border border-[var(--border-subtle)] flex items-center justify-between gap-2 text-left ui-card-hover ui-focus-ring"
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
                     <Flame
                       className={`w-4 h-4 shrink-0 transition-transform duration-150 group-hover:scale-110 ${
-                        showHeatmap ? 'text-[#fc4c02]' : 'text-slate-400'
+                        showHeatmap ? 'text-[#fc4c02]' : 'text-[var(--text-muted)]'
                       }`}
+                      aria-hidden="true"
                     />
-                    <div>
-                      <p className="text-[11px] font-bold text-slate-800 dark:text-slate-100 leading-tight">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-[var(--text-primary)] leading-tight">
                         Heatmap Jalur Populer
                       </p>
-                      <p className="text-[9px] text-slate-500 dark:text-slate-400 leading-tight">
-                        Sorot jalur lari, taman &amp; trotoar (Free)
+                      <p className="text-[10px] text-[var(--text-muted)] leading-tight mt-0.5">
+                        Sorot jalur lari, taman &amp; trotoar
                       </p>
                     </div>
                   </div>
                   <span
                     aria-hidden="true"
-                    className={`relative w-8 h-4 rounded-full p-0.5 transition-colors duration-200 flex items-center shrink-0 ${
+                    className={`relative w-9 h-5 rounded-full p-0.5 transition-colors duration-200 flex items-center shrink-0 ${
                       showHeatmap ? 'bg-[#fc4c02]' : 'bg-slate-300 dark:bg-slate-600'
                     }`}
                   >
                     <span
-                      className={`w-3 h-3 rounded-full bg-white shadow transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] ${
+                      className={`w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${
                         showHeatmap ? 'translate-x-4' : 'translate-x-0'
                       }`}
                     />
                   </span>
                 </button>
 
-                {/* Reset All Map Settings Action */}
+                {/* Reset Map Settings */}
                 <button
                   type="button"
                   onClick={handleResetMapSettings}
-                  className="group w-full py-2 px-2.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-orange-50 dark:hover:bg-orange-950/50 text-slate-700 dark:text-slate-200 hover:text-[#c93b00] dark:hover:text-orange-300 border border-slate-200 dark:border-slate-700 hover:border-orange-300 dark:hover:border-orange-500/40 text-[11px] font-bold flex items-center justify-center gap-1.5 ui-btn-secondary ui-focus-ring"
+                  className="group w-full min-h-[40px] py-2 px-2.5 rounded-xl bg-[var(--surface-solid)] hover:bg-[var(--brand-tint)] text-[var(--text-primary)] hover:text-[var(--brand-ink)] border border-[var(--border-subtle)] hover:border-[var(--brand-border)] text-xs font-bold flex items-center justify-center gap-1.5 ui-btn-secondary ui-focus-ring"
                 >
-                  <RotateCcw className="w-3.5 h-3.5 transition-transform duration-200 group-hover:-rotate-90" />
+                  <RotateCcw
+                    className="w-3.5 h-3.5 transition-transform duration-200 group-hover:-rotate-90"
+                    aria-hidden="true"
+                  />
                   <span>Reset Settingan Map</span>
                 </button>
               </div>
@@ -1692,12 +1660,13 @@ export default function RouteMap({
           disabled={isLocating}
           aria-label="Gunakan Lokasi GPS Saya"
           title="Gunakan Lokasi GPS Saya"
-          className="group w-10 h-10 md:w-11 md:h-11 rounded-xl strava-card flex items-center justify-center text-slate-700 dark:text-slate-200 hover:text-[#fc4c02] hover:bg-white dark:hover:bg-slate-800 hover:border-orange-300 dark:hover:border-orange-500/40 ui-card-hover ui-focus-ring"
+          className="group w-11 h-11 rounded-xl cockpit-card flex items-center justify-center text-[var(--text-primary)] hover:text-[#fc4c02] hover:border-[var(--brand-border)] ui-card-hover ui-focus-ring"
         >
           <Crosshair
-            className={`w-4 h-4 md:w-5 md:h-5 transition-transform duration-200 ${
+            className={`w-5 h-5 transition-transform duration-200 ${
               isLocating ? 'animate-spin text-[#fc4c02]' : 'group-hover:rotate-45'
             }`}
+            aria-hidden="true"
           />
         </button>
 
@@ -1708,9 +1677,12 @@ export default function RouteMap({
             onClick={fitToRoute}
             aria-label="Fokus ke Seluruh Rute"
             title="Fokus ke Seluruh Rute"
-            className="group w-10 h-10 md:w-11 md:h-11 rounded-xl strava-card flex items-center justify-center text-slate-700 dark:text-slate-200 hover:text-[#fc4c02] hover:bg-white dark:hover:bg-slate-800 hover:border-orange-300 dark:hover:border-orange-500/40 ui-card-hover ui-focus-ring ui-fade-slide-up"
+            className="group w-11 h-11 rounded-xl cockpit-card flex items-center justify-center text-[var(--text-primary)] hover:text-[#fc4c02] hover:border-[var(--brand-border)] ui-card-hover ui-focus-ring ui-fade-slide-up"
           >
-            <Maximize2 className="w-4 h-4 md:w-5 md:h-5 transition-transform duration-150 group-hover:scale-110" />
+            <Maximize2
+              className="w-5 h-5 transition-transform duration-150 group-hover:scale-110"
+              aria-hidden="true"
+            />
           </button>
         )}
 
@@ -1722,13 +1694,16 @@ export default function RouteMap({
             aria-pressed={is3DMode}
             aria-label={is3DMode ? 'Kembali ke Peta 2D' : 'Mode Peta 3D'}
             title={is3DMode ? 'Kembali ke Peta 2D' : 'Mode Peta 3D'}
-            className={`group w-10 h-10 md:w-11 md:h-11 rounded-xl strava-card flex items-center justify-center ui-card-hover ui-focus-ring ${
+            className={`group w-11 h-11 rounded-xl cockpit-card flex items-center justify-center ui-card-hover ui-focus-ring ${
               is3DMode
-                ? 'text-[#fc4c02] border-[#fc4c02] bg-orange-50 dark:bg-orange-950/60'
-                : 'text-slate-700 dark:text-slate-200 hover:text-[#fc4c02] hover:bg-white dark:hover:bg-slate-800 hover:border-orange-300 dark:hover:border-orange-500/40'
+                ? 'text-[#fc4c02] border-[#fc4c02] bg-[var(--brand-tint)]'
+                : 'text-[var(--text-primary)] hover:text-[#fc4c02] hover:border-[var(--brand-border)]'
             }`}
           >
-            <Box className="w-4 h-4 md:w-5 md:h-5 transition-transform duration-150 group-hover:scale-110" />
+            <Box
+              className="w-5 h-5 transition-transform duration-150 group-hover:scale-110"
+              aria-hidden="true"
+            />
           </button>
         )}
 
@@ -1739,26 +1714,32 @@ export default function RouteMap({
             onClick={handleResetNorth}
             aria-label="Hadap Utara (Reset Kamera)"
             title="Hadap Utara (Reset Kamera)"
-            className="group w-10 h-10 md:w-11 md:h-11 rounded-xl strava-card flex items-center justify-center text-[#fc4c02] hover:bg-orange-50 dark:hover:bg-orange-950/60 border-orange-200 dark:border-orange-500/40 ui-card-hover ui-focus-ring ui-fade-slide-up"
+            className="group w-11 h-11 rounded-xl cockpit-card flex items-center justify-center text-[#fc4c02] hover:bg-[var(--brand-tint)] border-[var(--brand-border)] ui-card-hover ui-focus-ring ui-fade-slide-up"
           >
-            <Compass className="w-4 h-4 md:w-5 md:h-5 transition-transform duration-200 group-hover:-rotate-45" />
+            <Compass
+              className="w-5 h-5 transition-transform duration-200 group-hover:-rotate-45"
+              aria-hidden="true"
+            />
           </button>
         )}
 
         {/* Zoom Controls + Live Zoom Indicator */}
-        <div className="flex flex-col rounded-xl strava-card overflow-hidden mt-0.5">
+        <div className="flex flex-col rounded-xl cockpit-card overflow-hidden mt-0.5">
           <button
             type="button"
             onClick={() => mapRef.current?.zoomIn({ duration: 250 })}
             aria-label="Perbesar Peta"
             title="Perbesar Peta"
-            className="group w-10 h-9 md:w-11 md:h-10 flex items-center justify-center text-slate-700 dark:text-slate-200 hover:text-[#fc4c02] hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b border-slate-200/80 dark:border-slate-700/80 active:scale-90 ui-focus-ring"
+            className="group w-11 h-11 flex items-center justify-center text-[var(--text-primary)] hover:text-[#fc4c02] hover:bg-[var(--surface-well)] transition-colors border-b border-[var(--border-subtle)] active:scale-90 ui-focus-ring"
           >
-            <Plus className="w-4 h-4 md:w-5 md:h-5 transition-transform duration-150 group-hover:scale-110" />
+            <Plus
+              className="w-5 h-5 transition-transform duration-150 group-hover:scale-110"
+              aria-hidden="true"
+            />
           </button>
           <div
             title="Level Zoom Aktif"
-            className="w-10 md:w-11 py-0.5 text-center text-[9px] font-mono tabular-nums font-extrabold text-[#fc4c02] bg-orange-50/70 dark:bg-orange-950/60 border-b border-slate-200/80 dark:border-slate-700/80"
+            className="w-11 py-1 text-center text-[10px] font-mono tabular-nums font-extrabold text-[var(--brand-ink)] bg-[var(--brand-tint)] border-b border-[var(--border-subtle)]"
           >
             z{Math.round(zoomLevel)}
           </div>
@@ -1767,9 +1748,12 @@ export default function RouteMap({
             onClick={() => mapRef.current?.zoomOut({ duration: 250 })}
             aria-label="Perkecil Peta"
             title="Perkecil Peta"
-            className="group w-10 h-9 md:w-11 md:h-10 flex items-center justify-center text-slate-700 dark:text-slate-200 hover:text-[#fc4c02] hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors active:scale-90 ui-focus-ring"
+            className="group w-11 h-11 flex items-center justify-center text-[var(--text-primary)] hover:text-[#fc4c02] hover:bg-[var(--surface-well)] transition-colors active:scale-90 ui-focus-ring"
           >
-            <Minus className="w-4 h-4 md:w-5 md:h-5 transition-transform duration-150 group-hover:scale-110" />
+            <Minus
+              className="w-5 h-5 transition-transform duration-150 group-hover:scale-110"
+              aria-hidden="true"
+            />
           </button>
         </div>
       </div>

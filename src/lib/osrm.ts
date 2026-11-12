@@ -1,7 +1,7 @@
 import {
+  GeneratedRouteResult,
   GeneratorShape,
   LatLng,
-  RouteCandidate,
   RouteData,
   Waypoint,
 } from './types';
@@ -1834,24 +1834,22 @@ export function buildRouteData(
   };
 }
 
-export interface GenerateCandidatesOptions {
+export interface GenerateBestRouteOptions {
   start: LatLng;
   targetKm: number;
   shape: GeneratorShape;
-  maxCandidates?: number;
   existingRoutes?: LatLng[][];
   seedOffset?: number;
   signal?: AbortSignal;
 }
 
-export interface GenerateCandidatesResult {
-  candidates: RouteCandidate[];
+export interface GenerateBestRouteResponse {
+  route: GeneratedRouteResult | null;
   effectiveStart: LatLng;
-  exhaustedUnique: boolean;
   usedFallback?: boolean;
 }
 
-interface RawCandidateProposal {
+interface RawRouteProposal {
   trip: EvaluatedTrip;
   anchors: LatLng[];
   rKm: number;
@@ -1860,13 +1858,13 @@ interface RawCandidateProposal {
   quickScore: number;
 }
 
-function makeCandidateObject(params: {
+function makeGeneratedRouteObject(params: {
   coords: LatLng[];
   distanceKm: number;
   targetKm: number;
   shape: GeneratorShape;
   source: 'valhalla' | 'brouter' | 'osrm' | 'direct';
-}): RouteCandidate {
+}): GeneratedRouteResult {
   const { coords, distanceKm, targetKm, shape, source } = params;
   const { points: anchorPts, indices: anchorIndices } = extractEditableAnchors(coords, 14);
 
@@ -1899,7 +1897,7 @@ function makeCandidateObject(params: {
   };
 
   return {
-    id: `cand-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    id: `gen-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     shape,
     routeData,
     anchors: anchorPts,
@@ -1909,7 +1907,7 @@ function makeCandidateObject(params: {
   };
 }
 
-interface CandidateSpec {
+interface CompassSpec {
   rKm: number;
   heading: number;
   reverseOrder: boolean;
@@ -1922,17 +1920,16 @@ function angularDiffDeg(a: number, b: number): number {
 }
 
 /**
- * Generates up to `maxCandidates` spatially distinct Car & Motorcycle compliant running routes
- * using multi-directional candidate sweeps, distance accuracy calibration, and spatial deduplication.
+ * Generates the single highest-accuracy Car & Motorcycle compliant running route
+ * using multi-directional compass sweeps, distance accuracy calibration, and previous-route avoidance.
  */
-export async function generateRouteCandidates(
-  options: GenerateCandidatesOptions
-): Promise<GenerateCandidatesResult> {
+export async function generateSingleBestRoute(
+  options: GenerateBestRouteOptions
+): Promise<GenerateBestRouteResponse> {
   const {
     start,
     targetKm,
     shape,
-    maxCandidates = 3,
     existingRoutes = [],
     seedOffset = 0,
     signal,
@@ -1940,7 +1937,7 @@ export async function generateRouteCandidates(
 
   const startAnchor = await resolveVehicleSnapPoint(start, 'loop_start', signal);
   if (signal?.aborted) {
-    return { candidates: [], effectiveStart: startAnchor.point, exhaustedUnique: false };
+    return { route: null, effectiveStart: startAnchor.point };
   }
 
   const effectiveStart = startAnchor.point;
@@ -1984,28 +1981,25 @@ export async function generateRouteCandidates(
     return [effectiveStart, pushOutOfObvitnas(rawTurn), effectiveStart];
   };
 
-  const baseAngle =
-    maxCandidates === 1
-      ? (((25 + 36 + Math.max(0, seedOffset - 1) * 53) % 360) + 360) % 360
-      : (((seedOffset * 71 + 25) % 360) + 360) % 360;
+  const baseAngle = (((seedOffset * 53 + 25) % 360) + 360) % 360;
   const primaryTurnClass: ValhallaRoadClass = 'tertiary';
   const baseRadiusKm = shape === 'loop' ? targetKm / 13.5 : targetKm / 2.75;
 
-  // Build angularly diverse Pass 1 specs (5 bisector/oblong rays for +1 so users get genuinely new corridors)
-  const pass1Specs: CandidateSpec[] = [];
+  const pass1Specs: CompassSpec[] = [];
   const targetPass1Count = 5;
   const compassStep = 72;
-  const radiusScales = maxCandidates === 1 ? [1.22, 0.82, 1.48, 0.68, 1.65] : [1.0, 1.0, 1.0, 1.0, 1.0];
+  const radiusScales = seedOffset > 0 ? [1.0, 1.06, 0.94, 1.02, 0.96] : [1.0, 1.0, 1.0, 1.0, 1.0];
   const spreadAngles =
-    maxCandidates === 1
+    seedOffset > 0
       ? [
           (2 * Math.PI) / 3,
           (Math.PI * 3) / 4,
           Math.PI / 2,
           (2 * Math.PI) / 3,
-          (Math.PI * 5) / 6,
+          (Math.PI * 7) / 12,
         ]
       : undefined;
+
   for (let i = 0; i < targetPass1Count; i++) {
     const heading = (baseAngle + i * compassStep) % 360;
     pass1Specs.push({
@@ -2016,7 +2010,7 @@ export async function generateRouteCandidates(
     });
   }
 
-  const makeProposal = (spec: CandidateSpec, trip: EvaluatedTrip, pts: LatLng[]): RawCandidateProposal => {
+  const makeProposal = (spec: CompassSpec, trip: EvaluatedTrip, pts: LatLng[]): RawRouteProposal => {
     const devRatio = Math.abs(trip.distanceKm - targetKm) / (targetKm || 1);
     return {
       trip,
@@ -2028,13 +2022,12 @@ export async function generateRouteCandidates(
     };
   };
 
-  const snapSpecWaypoints = async (spec: CandidateSpec): Promise<LatLng[]> => {
+  const snapSpecWaypoints = async (spec: CompassSpec): Promise<LatLng[]> => {
     const rawPts =
       shape === 'loop'
         ? buildLoopTriplet(spec.rKm, spec.heading, spec.reverseOrder, spec.spreadRad)
         : buildOutBackTriplet(spec.rKm, spec.heading);
 
-    // Pre-snap intermediate anchors onto real OpenFreeMap z=14 car streets so BRouter/OSRM never hit islands or alleys
     const snapped = await Promise.all(
       rawPts.map(async (pt, idx) => {
         if (idx === 0 || idx === rawPts.length - 1) return pt;
@@ -2046,10 +2039,10 @@ export async function generateRouteCandidates(
   };
 
   const evaluateValhallaSpecs = async (
-    specs: CandidateSpec[],
+    specs: CompassSpec[],
     minTurnClass: ValhallaRoadClass,
     excludeLocs: LatLng[] = []
-  ): Promise<{ proposals: RawCandidateProposal[]; anyFailedNetwork: boolean }> => {
+  ): Promise<{ proposals: RawRouteProposal[]; anyFailedNetwork: boolean }> => {
     let anyFailedNetwork = false;
     const results = await Promise.all(
       specs.map(async (spec) => {
@@ -2070,7 +2063,7 @@ export async function generateRouteCandidates(
         }));
 
         const res = await fetchValhallaTrips(valhallaLocs, {
-          alternates: maxCandidates === 1 ? 1 : 0,
+          alternates: seedOffset > 0 ? 1 : 0,
           excludeLocations: excludeLocs,
           timeoutMs: 2600,
           signal,
@@ -2083,9 +2076,9 @@ export async function generateRouteCandidates(
   };
 
   const evaluateBRouterSpecs = async (
-    specs: CandidateSpec[],
+    specs: CompassSpec[],
     excludeLocs: LatLng[] = []
-  ): Promise<RawCandidateProposal[]> => {
+  ): Promise<RawRouteProposal[]> => {
     if (!isBRouterHealthy()) return [];
     const results = await Promise.all(
       specs.map(async (spec, idx) => {
@@ -2106,8 +2099,8 @@ export async function generateRouteCandidates(
   };
 
   const evaluateOsrmSpecs = async (
-    specs: CandidateSpec[]
-  ): Promise<RawCandidateProposal[]> => {
+    specs: CompassSpec[]
+  ): Promise<RawRouteProposal[]> => {
     const results = await Promise.all(
       specs.map(async (spec) => {
         if (signal?.aborted) return [];
@@ -2120,7 +2113,7 @@ export async function generateRouteCandidates(
     return results.flat();
   };
 
-  let rawPool: RawCandidateProposal[] = [];
+  let rawPool: RawRouteProposal[] = [];
   let activeEngine: 'valhalla' | 'brouter' | 'osrm' = 'valhalla';
   let usedFallback = false;
 
@@ -2135,10 +2128,9 @@ export async function generateRouteCandidates(
   }
 
   if (signal?.aborted) {
-    return { candidates: [], effectiveStart, exhaustedUnique: false };
+    return { route: null, effectiveStart };
   }
 
-  // Tier 2: Fast BRouter car-eco engine (~650ms) when Valhalla is unreachable or returned no paths
   if (rawPool.length === 0 && isBRouterHealthy()) {
     activeEngine = 'brouter';
     usedFallback = true;
@@ -2146,10 +2138,9 @@ export async function generateRouteCandidates(
   }
 
   if (signal?.aborted) {
-    return { candidates: [], effectiveStart, exhaustedUnique: false };
+    return { route: null, effectiveStart };
   }
 
-  // Tier 3: OSRM driving fallback if both Valhalla and BRouter returned empty
   if (rawPool.length === 0) {
     activeEngine = 'osrm';
     usedFallback = true;
@@ -2157,26 +2148,33 @@ export async function generateRouteCandidates(
   }
 
   if (signal?.aborted) {
-    return { candidates: [], effectiveStart, exhaustedUnique: false };
+    return { route: null, effectiveStart };
   }
 
-  // Pass 2: Distance calibration & Gang/Obvitnas exclusion for top distinct candidates
+  // Pass 2: Distance calibration & Gang/Obvitnas exclusion for top distinct headings
   rawPool.sort((a, b) => a.quickScore - b.quickScore);
-  const needsPass2Specs: CandidateSpec[] = [];
+  const needsPass2Specs: CompassSpec[] = [];
   const gangExcludes: LatLng[] = [];
-  const pass2Cap = maxCandidates === 1 ? 1 : 2;
   const pass2Headings: number[] = [];
 
   for (const cand of rawPool) {
     cand.trip.gangPoints.forEach((gp) => {
       if (gangExcludes.length < 8) gangExcludes.push(gp);
     });
-    if (needsPass2Specs.length >= pass2Cap) continue;
+    if (needsPass2Specs.length >= 2) continue;
     if (pass2Headings.some((h) => angularDiffDeg(h, cand.heading) < 40)) continue;
+
+    // Prioritize headings not identical to already-shown routes when calibrating distance
+    const isRepeat =
+      existingRoutes.length > 0 &&
+      existingRoutes.some((ref) =>
+        arePolylinesTooSimilar(cand.trip.coordinates, ref, 0.72, 28, 22)
+      );
+    if (isRepeat && needsPass2Specs.length > 0) continue;
 
     const devRatio = Math.abs(cand.trip.distanceKm - targetKm) / (targetKm || 1);
     const hasPenalty = cand.trip.gangPoints.length > 0 || cand.trip.obvitnasCount > 0;
-    if (devRatio > 0.1 || hasPenalty) {
+    if (devRatio > 0.08 || hasPenalty) {
       const ratio = targetKm / (cand.trip.distanceKm || targetKm);
       const scaledR = cand.rKm * Math.min(2.1, Math.max(0.55, ratio));
       pass2Headings.push(cand.heading);
@@ -2207,86 +2205,64 @@ export async function generateRouteCandidates(
   }
 
   if (signal?.aborted) {
-    return { candidates: [], effectiveStart, exhaustedUnique: false };
+    return { route: null, effectiveStart };
   }
 
   const validPool = rawPool
     .filter((item) => item.trip.coordinates.length >= 2)
+    .map((item) => {
+      const coords = [...item.trip.coordinates];
+      if (haversineDistance(coords[0], coords[coords.length - 1]) > 0.002) {
+        coords.push({ ...coords[0] });
+      } else {
+        coords[coords.length - 1] = { ...coords[0] };
+      }
+      const closedDistKm = calculatePolylineDistance(coords);
+      const closedDevRatio = Math.abs(closedDistKm - targetKm) / (targetKm || 1);
+      return {
+        ...item,
+        quickScore: item.trip.scorePenalty + closedDevRatio * 1000,
+        trip: {
+          ...item.trip,
+          coordinates: coords,
+          distanceKm: closedDistKm,
+        },
+      };
+    })
     .sort((a, b) => a.quickScore - b.quickScore);
 
-  // Deduplicate spatially against `existingRoutes` + already picked pool using 62% overlap threshold
-  const selectedRaw: RawCandidateProposal[] = [];
-  const referencePolylines: LatLng[][] = [...existingRoutes];
+  const hasCleanRoute = validPool.some((v) => v.trip.obvitnasCount === 0 && v.trip.tollCount === 0);
+  const cleanPool = hasCleanRoute
+    ? validPool.filter((v) => v.trip.obvitnasCount === 0 && v.trip.tollCount === 0)
+    : validPool;
 
-  for (const cand of validPool) {
-    if (selectedRaw.length >= maxCandidates) break;
-    if (
-      (cand.trip.obvitnasCount > 0 || cand.trip.tollCount > 0) &&
-      validPool.some((v) => v.trip.obvitnasCount === 0 && v.trip.tollCount === 0)
-    ) {
-      continue;
-    }
-
-    const coords = [...cand.trip.coordinates];
-    if (haversineDistance(coords[0], coords[coords.length - 1]) > 0.002) {
-      coords.push({ ...coords[0] });
-    } else {
-      coords[coords.length - 1] = { ...coords[0] };
-    }
-
-    const tooSimilar = referencePolylines.some((ref) =>
-      arePolylinesTooSimilar(coords, ref, 0.62, 32, 20)
-    );
-    if (tooSimilar) continue;
-
-    const closedDistKm = calculatePolylineDistance(coords);
-    const closedDevRatio = Math.abs(closedDistKm - targetKm) / (targetKm || 1);
-
-    selectedRaw.push({
-      ...cand,
-      quickScore: cand.trip.scorePenalty + closedDevRatio * 1000,
-      trip: {
-        ...cand.trip,
-        coordinates: coords,
-        distanceKm: closedDistKm,
-      },
-    });
-    referencePolylines.push(coords);
-  }
-
-  // Rank candidates strictly by car/motor compliance (zero penalty) & distance accuracy
-  selectedRaw.sort((a, b) => a.quickScore - b.quickScore);
-
-  const finalList = selectedRaw.slice(0, maxCandidates).map((item) =>
-    makeCandidateObject({
-      coords: item.trip.coordinates,
-      distanceKm: item.trip.distanceKm,
-      targetKm,
-      shape,
-      source: activeEngine,
-    })
+  // Prefer the best route not overlapping prior generated paths; fallback gracefully to least-similar if exhausted
+  let winner = cleanPool.find(
+    (cand) =>
+      !existingRoutes.some((ref) => arePolylinesTooSimilar(cand.trip.coordinates, ref, 0.62, 32, 20))
   );
 
-  return {
-    candidates: finalList,
-    effectiveStart: finalList[0]?.routeData.coordinates[0] || effectiveStart,
-    exhaustedUnique: finalList.length === 0 && existingRoutes.length > 0,
-    ...(usedFallback ? { usedFallback: true } : {}),
-  };
-}
+  if (!winner && cleanPool.length > 0) {
+    const mostRecent = existingRoutes[existingRoutes.length - 1];
+    winner =
+      cleanPool.find(
+        (cand) => !mostRecent || !arePolylinesTooSimilar(cand.trip.coordinates, mostRecent, 0.78, 30, 20)
+      ) ?? cleanPool[0];
+  }
 
-/**
- * Generates one additional spatially distinct candidate (for "+ Tambah Saran" or background prefetch).
- */
-export async function generateNextCandidate(
-  options: Omit<GenerateCandidatesOptions, 'maxCandidates'>
-): Promise<{ candidate: RouteCandidate | null; exhaustedUnique: boolean }> {
-  const res = await generateRouteCandidates({
-    ...options,
-    maxCandidates: 1,
-  });
+  const route = winner
+    ? makeGeneratedRouteObject({
+        coords: winner.trip.coordinates,
+        distanceKm: winner.trip.distanceKm,
+        targetKm,
+        shape,
+        source: activeEngine,
+      })
+    : null;
+
   return {
-    candidate: res.candidates[0] ?? null,
-    exhaustedUnique: res.exhaustedUnique,
+    route,
+    effectiveStart: route?.routeData.coordinates[0] || effectiveStart,
+    ...(usedFallback ? { usedFallback: true } : {}),
   };
 }

@@ -1,25 +1,32 @@
 import type { Metadata, Viewport } from 'next';
-import localFont from 'next/font/local';
+import { Barlow_Condensed, Plus_Jakarta_Sans, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 
-const geistSans = localFont({
-  src: './fonts/GeistVF.woff',
-  variable: '--font-geist-sans',
-  weight: '100 900',
+const plusJakarta = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800'],
+  variable: '--font-sans',
   display: 'swap',
 });
 
-const geistMono = localFont({
-  src: './fonts/GeistMonoVF.woff',
-  variable: '--font-geist-mono',
-  weight: '100 900',
+const barlowCondensed = Barlow_Condensed({
+  subsets: ['latin'],
+  weight: ['600', '700', '800'],
+  variable: '--font-display',
+  display: 'swap',
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  weight: ['500', '600', '700', '800'],
+  variable: '--font-mono',
   display: 'swap',
 });
 
 export const metadata: Metadata = {
-  title: 'RunRoute PRO | Smart Running Route & Random Loop Planner',
+  title: 'RunRoute PRO | Perencana & Generator Rute Lari',
   description:
-    'Rancang rute lari pintar, random 5K/10K closed loop, dan manual tap-to-route 100% gratis di jalur aman kendaraan (mobil & motor) dengan OpenStreetMap & Valhalla routing. Ekspor rute ke GPX (Strava/Garmin) dan GeoJSON.',
+    'Rancang rute lari pintar secara otomatis maupun manual tap-to-route di jalur kendaraan umum (mobil & motor) dengan OpenStreetMap & Valhalla routing. Ekspor ke GPX & GeoJSON.',
   keywords: [
     'Run Route Generator',
     'Random Loop Runner',
@@ -31,7 +38,6 @@ export const metadata: Metadata = {
     'GPX Export',
     'MapLibre GL',
     'OpenFreeMap',
-    'OSRM',
   ],
   authors: [{ name: 'RunRoute PRO' }],
 };
@@ -50,7 +56,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="id" className={`${geistSans.variable} ${geistMono.variable}`}>
+    <html
+      lang="id"
+      className={`${plusJakarta.variable} ${barlowCondensed.variable} ${jetbrainsMono.variable}`}
+    >
       <head>
         <link rel="preconnect" href="https://tiles.openfreemap.org" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://tiles.openfreemap.org" />
@@ -58,7 +67,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://brouter.de" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://router.project-osrm.org" crossOrigin="anonymous" />
       </head>
-      <body className="font-sans antialiased bg-[#f1f5f9] text-slate-900 overflow-hidden w-screen h-screen">
+      <body className="font-sans antialiased bg-[var(--bg-canvas)] text-[var(--text-primary)] overflow-hidden w-screen h-[100dvh]">
         {children}
       </body>
     </html>

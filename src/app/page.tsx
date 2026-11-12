@@ -10,18 +10,16 @@ import {
   TileLayerId,
   UnitSystem,
   GeneratorShape,
-  RouteCandidate,
+  GeneratedRouteResult,
 } from '@/lib/types';
 import { loadStravaOutdoorStyle } from '@/lib/layers';
 import {
   fetchSmartManualRoute,
   buildRouteData,
   snapWaypointToVehicleRoad,
-  generateRouteCandidates,
-  generateNextCandidate,
+  generateSingleBestRoute,
 } from '@/lib/osrm';
 import {
-  arePolylinesTooSimilar,
   calculatePolylineDistance,
   findClosestPointOnPolyline,
   getInsertionIndexForSegment,
@@ -43,10 +41,10 @@ import SavedRoutesModal from '@/components/UI/SavedRoutesModal';
 const RouteMap = dynamic(() => import('@/components/Map/RouteMap'), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full flex flex-col items-center justify-center bg-[#f1f5f9] dark:bg-[#0f172a] text-slate-700 dark:text-slate-200 gap-3">
+    <div className="w-full h-full flex flex-col items-center justify-center bg-[var(--bg-canvas)] text-[var(--text-primary)] gap-3">
       <div className="w-10 h-10 border-[3px] border-[#fc4c02] border-t-transparent rounded-full animate-spin" />
-      <span className="text-sm font-bold text-slate-700 dark:text-slate-200">
-        Memuat Peta Strava Style &amp; Engine Routing (100% Free)...
+      <span className="text-sm font-bold text-[var(--text-secondary)]">
+        Memuat Peta &amp; Engine Routing...
       </span>
     </div>
   ),
@@ -126,66 +124,39 @@ export default function HomePage() {
     setManualWaypoints(wps);
   }, []);
 
-  // 2. ISOLATED STATE: RunCulture-Style Multi-Candidate Generator Mode (Car/Motor Compliant, Zero Elevation)
+  // 2. ISOLATED STATE: Single-Route Generator Mode (Car/Motor Compliant, Zero Elevation, Zero Saran Rute)
   const [loopStartLocation, setLoopStartLocation] = useState<LatLng | null>(DEFAULT_CENTER);
   const [targetDistanceKm, setTargetDistanceKm] = useState<number>(10);
   const [routeShape, setRouteShape] = useState<GeneratorShape>('loop');
-  const [candidates, setCandidates] = useState<RouteCandidate[]>([]);
-  const [activeCandidateId, setActiveCandidateId] = useState<string | null>(null);
-  const [peekCandidateId, setPeekCandidateId] = useState<string | null>(null);
-  const [exhaustedUnique, setExhaustedUnique] = useState<boolean>(false);
-  const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
-  const [hasPrefetchedNext, setHasPrefetchedNext] = useState<boolean>(false);
+  const [generatedRoute, setGeneratedRoute] = useState<GeneratedRouteResult | null>(null);
   const [undoVersion, setUndoVersion] = useState<number>(0);
 
   const seedOffsetRef = useRef<number>(0);
   const generatorAbortRef = useRef<AbortController | null>(null);
-  const prefetchAbortRef = useRef<AbortController | null>(null);
-  const prefetchTimerRef = useRef<number | null>(null);
   const shownFallbackNoticeRef = useRef<boolean>(false);
   const generationKeyRef = useRef<string>('');
   const anchorEditSeqRef = useRef<number>(0);
-  const prefetchedRef = useRef<{
-    key: string;
-    candidate: RouteCandidate | null;
-    exhausted: boolean;
-  } | null>(null);
-  const candidateHistoryRef = useRef<
-    Record<
-      string,
-      Array<{
-        anchors: LatLng[];
-        anchorIndices: number[];
-        routeData: RouteData;
-        isEdited: boolean;
-      }>
-    >
-  >({});
+  const recentGeneratedCoordsRef = useRef<LatLng[][]>([]);
+  const routeEditHistoryRef = useRef<
+    Array<{
+      anchors: LatLng[];
+      anchorIndices: number[];
+      routeData: RouteData;
+      isEdited: boolean;
+    }>
+  >([]);
 
-  // Cleanup active AbortControllers and background prefetch timer on unmount
+  // Cleanup active AbortController on unmount
   useEffect(() => {
     return () => {
-      if (prefetchTimerRef.current !== null) {
-        window.clearTimeout(prefetchTimerRef.current);
-        prefetchTimerRef.current = null;
-      }
       generatorAbortRef.current?.abort();
-      prefetchAbortRef.current?.abort();
     };
   }, []);
 
-  // Invalidate background prefetch whenever target config changes
+  // Reset history cache when target config changes
   useEffect(() => {
-    if (prefetchTimerRef.current !== null) {
-      window.clearTimeout(prefetchTimerRef.current);
-      prefetchTimerRef.current = null;
-    }
-    if (prefetchAbortRef.current) {
-      prefetchAbortRef.current.abort();
-      prefetchAbortRef.current = null;
-    }
-    prefetchedRef.current = null;
-    setHasPrefetchedNext(false);
+    recentGeneratedCoordsRef.current = [];
+    seedOffsetRef.current = 0;
   }, [loopStartLocation, targetDistanceKm, routeShape]);
 
   // Auto-detect GPS position silently on app startup
@@ -235,18 +206,12 @@ export default function HomePage() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Mode-isolated active states (Manual Tap & RunCulture Generator)
-  const activeCandidate = candidates.find((c) => c.id === activeCandidateId) ?? null;
-  const peekCandidate =
-    peekCandidateId && peekCandidateId !== activeCandidateId
-      ? candidates.find((c) => c.id === peekCandidateId) ?? null
-      : null;
-
+  // Mode-isolated active states (Manual Tap & Single-Route Generator)
   const activeWaypoints =
     currentMode === 'manual'
       ? manualWaypoints
-      : activeCandidate
-      ? activeCandidate.routeData.waypoints
+      : generatedRoute
+      ? generatedRoute.routeData.waypoints
       : loopStartLocation
       ? [
           {
@@ -261,19 +226,15 @@ export default function HomePage() {
   const activeRouteData =
     currentMode === 'manual'
       ? manualRouteData
-      : activeCandidate
-      ? activeCandidate.routeData
+      : generatedRoute
+      ? generatedRoute.routeData
       : null;
 
-  const activePeekRouteData =
-    currentMode === 'random' && peekCandidate ? peekCandidate.routeData : null;
-
   const activeEditableAnchors =
-    currentMode === 'random' && activeCandidate ? activeCandidate.anchors : [];
+    currentMode === 'random' && generatedRoute ? generatedRoute.anchors : [];
 
   const canUndoEdit =
-    undoVersion >= 0 &&
-    Boolean(activeCandidate && (candidateHistoryRef.current[activeCandidate.id]?.length ?? 0) > 0);
+    undoVersion >= 0 && Boolean(generatedRoute && routeEditHistoryRef.current.length > 0);
 
   const recomputeManualRoute = useCallback(
     async (nextWaypoints: Waypoint[]) => {
@@ -314,6 +275,14 @@ export default function HomePage() {
     [commitManualWaypoints]
   );
 
+  // Cancel any in-flight route generation
+  const cancelAllGeneratorWork = useCallback(() => {
+    if (generatorAbortRef.current) {
+      generatorAbortRef.current.abort();
+      generatorAbortRef.current = null;
+    }
+  }, []);
+
   // Handle Map Clicks based on active mode
   const handleMapClick = useCallback(
     async (clickedLatLng: LatLng) => {
@@ -333,7 +302,7 @@ export default function HomePage() {
 
       if (currentMode === 'manual') {
         const curWaypoints = manualWaypointsRef.current;
-        setManualRedoStack([]); // Reset redo stack on new addition
+        setManualRedoStack([]);
         const newWaypoint: Waypoint = {
           id: `wp-${Date.now()}-${curWaypoints.length + 1}`,
           lat: effectiveLatLng.lat,
@@ -346,101 +315,24 @@ export default function HomePage() {
         await recomputeManualRoute(updatedWaypoints);
       } else if (currentMode === 'random') {
         hasManualLoopStartRef.current = true;
-        if (prefetchTimerRef.current !== null) {
-          window.clearTimeout(prefetchTimerRef.current);
-          prefetchTimerRef.current = null;
-        }
-        generatorAbortRef.current?.abort();
-        prefetchAbortRef.current?.abort();
-        prefetchedRef.current = null;
-        setHasPrefetchedNext(false);
-        setCandidates([]);
-        setActiveCandidateId(null);
-        setPeekCandidateId(null);
-        setExhaustedUnique(false);
+        cancelAllGeneratorWork();
+        routeEditHistoryRef.current = [];
+        recentGeneratedCoordsRef.current = [];
+        setGeneratedRoute(null);
+        setUndoVersion((v) => v + 1);
         setLoopStartLocation(effectiveLatLng);
         addToast(
           'info',
           'Titik Start Dipilih',
-          `Lokasi diatur ke [${effectiveLatLng.lat.toFixed(4)}, ${effectiveLatLng.lng.toFixed(4)}]. Klik Generate Rute untuk saran baru.`
+          `Lokasi diatur ke [${effectiveLatLng.lat.toFixed(4)}, ${effectiveLatLng.lng.toFixed(4)}]. Klik Generate Rute.`
         );
       }
     },
-    [currentMode, commitManualWaypoints, recomputeManualRoute, addToast]
+    [currentMode, commitManualWaypoints, recomputeManualRoute, cancelAllGeneratorWork, addToast]
   );
 
-  // Cancel all pending RunCulture candidate requests
-  const cancelAllGeneratorWork = useCallback(() => {
-    if (prefetchTimerRef.current !== null) {
-      window.clearTimeout(prefetchTimerRef.current);
-      prefetchTimerRef.current = null;
-    }
-    if (generatorAbortRef.current) {
-      generatorAbortRef.current.abort();
-      generatorAbortRef.current = null;
-    }
-    if (prefetchAbortRef.current) {
-      prefetchAbortRef.current.abort();
-      prefetchAbortRef.current = null;
-    }
-    prefetchedRef.current = null;
-    setHasPrefetchedNext(false);
-  }, []);
-
-  // Silent background +1 candidate prefetch (delayed 1.2s so immediate map/card edits never contend)
-  const startBackgroundPrefetch = useCallback(
-    (
-      key: string,
-      start: LatLng,
-      distKm: number,
-      shape: GeneratorShape,
-      existingCoords: LatLng[][],
-      nextSeed: number
-    ) => {
-      if (existingCoords.length === 0 || existingCoords.length >= 6) return;
-      if (prefetchTimerRef.current !== null) {
-        window.clearTimeout(prefetchTimerRef.current);
-        prefetchTimerRef.current = null;
-      }
-      if (prefetchAbortRef.current) {
-        prefetchAbortRef.current.abort();
-        prefetchAbortRef.current = null;
-      }
-
-      const controller = new AbortController();
-      prefetchAbortRef.current = controller;
-
-      prefetchTimerRef.current = window.setTimeout(() => {
-        prefetchTimerRef.current = null;
-        if (controller.signal.aborted || generationKeyRef.current !== key) return;
-
-        void generateNextCandidate({
-          start,
-          targetKm: distKm,
-          shape,
-          existingRoutes: existingCoords,
-          seedOffset: nextSeed,
-          signal: controller.signal,
-        })
-          .then((res) => {
-            if (controller.signal.aborted || generationKeyRef.current !== key) return;
-            prefetchedRef.current = {
-              key,
-              candidate: res.candidate,
-              exhausted: res.exhaustedUnique,
-            };
-            setHasPrefetchedNext(Boolean(res.candidate));
-          })
-          .catch(() => {
-            // Non-critical background prefetch
-          });
-      }, 1200);
-    },
-    []
-  );
-
-  // RunCulture Generator: Generate up to 3 spatially unique car/motor compliant routes
-  const handleGenerateBatch = useCallback(
+  // Generator: Generate 1 highest-accuracy Car/Motor compliant route
+  const handleGenerateRoute = useCallback(
     async (overrideStart?: LatLng, explicitSeedOffset?: number) => {
       const start = overrideStart ?? loopStartLocation;
       if (!start) {
@@ -450,8 +342,14 @@ export default function HomePage() {
 
       cancelAllGeneratorWork();
 
-      const seed = explicitSeedOffset !== undefined ? explicitSeedOffset : 0;
+      const isReRoll = explicitSeedOffset !== undefined;
+      const seed = isReRoll ? explicitSeedOffset : 0;
       seedOffsetRef.current = seed;
+
+      if (!isReRoll) {
+        recentGeneratedCoordsRef.current = [];
+      }
+
       const key = makeGenKey(start, targetDistanceKm, routeShape);
       generationKeyRef.current = key;
 
@@ -459,17 +357,13 @@ export default function HomePage() {
       generatorAbortRef.current = controller;
 
       setIsLoadingRoute(true);
-      setIsLoadingMore(false);
-      setExhaustedUnique(false);
-      setPeekCandidateId(null);
 
       try {
-        const res = await generateRouteCandidates({
+        const res = await generateSingleBestRoute({
           start,
           targetKm: targetDistanceKm,
           shape: routeShape,
-          maxCandidates: 3,
-          existingRoutes: [],
+          existingRoutes: isReRoll ? recentGeneratedCoordsRef.current : [],
           seedOffset: seed,
           signal: controller.signal,
         });
@@ -477,11 +371,9 @@ export default function HomePage() {
         if (controller.signal.aborted || generationKeyRef.current !== key) return;
 
         setIsLoadingRoute(false);
-        candidateHistoryRef.current = {};
+        routeEditHistoryRef.current = [];
         setUndoVersion((v) => v + 1);
-        setCandidates(res.candidates);
-        setActiveCandidateId(res.candidates[0]?.id ?? null);
-        setExhaustedUnique(res.exhaustedUnique);
+        setGeneratedRoute(res.route);
         setFitTrigger((n) => n + 1);
 
         if (res.usedFallback) {
@@ -497,27 +389,21 @@ export default function HomePage() {
           shownFallbackNoticeRef.current = false;
         }
 
-        const top = res.candidates[0];
-        if (top) {
+        if (res.route) {
+          recentGeneratedCoordsRef.current = [
+            ...recentGeneratedCoordsRef.current.slice(-3),
+            res.route.routeData.coordinates,
+          ];
           const shapeName = routeShape === 'out_and_back' ? 'Pergi-Pulang' : 'Loop';
           const devPct =
             targetDistanceKm > 0
-              ? ((top.routeData.distanceKm - targetDistanceKm) / targetDistanceKm) * 100
+              ? ((res.route.routeData.distanceKm - targetDistanceKm) / targetDistanceKm) * 100
               : 0;
           const acc = Math.max(0, 100 - Math.abs(devPct)).toFixed(1);
           addToast(
             'success',
-            `${res.candidates.length} Saran Rute ${shapeName} Siap!`,
-            `Terbaik #1: ${top.routeData.distanceKm.toFixed(2)} km (Akurasi ${acc}%)`
-          );
-
-          startBackgroundPrefetch(
-            key,
-            start,
-            targetDistanceKm,
-            routeShape,
-            res.candidates.map((c) => c.routeData.coordinates),
-            seed + 1
+            `Rute ${shapeName} Siap!`,
+            `${res.route.routeData.distanceKm.toFixed(2)} km (Akurasi ${acc}%)`
           );
         } else {
           addToast(
@@ -538,144 +424,14 @@ export default function HomePage() {
       targetDistanceKm,
       routeShape,
       cancelAllGeneratorWork,
-      startBackgroundPrefetch,
       addToast,
     ]
   );
 
-  // RunCulture Generator: Add 1 more unique suggestion (consumes prefetched route instantaneously!)
-  const handleGenerateMore = useCallback(async () => {
-    const start = loopStartLocation;
-    if (!start || isLoadingRoute || isLoadingMore || candidates.length >= 6 || exhaustedUnique) {
-      return;
-    }
-
-    const key = makeGenKey(start, targetDistanceKm, routeShape);
-    generationKeyRef.current = key;
-
-    const cached = prefetchedRef.current;
-    if (cached && cached.key === key) {
-      prefetchedRef.current = null;
-      setHasPrefetchedNext(false);
-
-      if (cached.candidate) {
-        const isDuplicate = candidates.some((c) =>
-          arePolylinesTooSimilar(
-            c.routeData.coordinates,
-            cached.candidate!.routeData.coordinates,
-            0.62,
-            32,
-            20
-          )
-        );
-        if (!isDuplicate) {
-          const nextList = [...candidates, cached.candidate];
-          setCandidates(nextList);
-          setActiveCandidateId(cached.candidate.id);
-          setPeekCandidateId(null);
-          setFitTrigger((n) => n + 1);
-          seedOffsetRef.current += 1;
-          const devPct =
-            targetDistanceKm > 0
-              ? ((cached.candidate.routeData.distanceKm - targetDistanceKm) / targetDistanceKm) * 100
-              : 0;
-          const acc = Math.max(0, 100 - Math.abs(devPct)).toFixed(0);
-          addToast(
-            'success',
-            `Saran #${nextList.length} Ditambahkan!`,
-            `${cached.candidate.routeData.distanceKm.toFixed(2)} km • Akurasi ${acc}%`
-          );
-          startBackgroundPrefetch(
-            key,
-            start,
-            targetDistanceKm,
-            routeShape,
-            nextList.map((c) => c.routeData.coordinates),
-            seedOffsetRef.current + 1
-          );
-          return;
-        }
-      }
-
-      if (cached.exhausted) {
-        setExhaustedUnique(true);
-        addToast('info', 'Variasi Habis', 'Semua variasi rute unik di sekitar lokasi sudah ditampilkan.');
-        return;
-      }
-    }
-
-    setIsLoadingMore(true);
-    if (prefetchAbortRef.current) {
-      prefetchAbortRef.current.abort();
-      prefetchAbortRef.current = null;
-    }
-    const controller = new AbortController();
-    prefetchAbortRef.current = controller;
-
-    try {
-      const nextSeed = seedOffsetRef.current + 1;
-      seedOffsetRef.current = nextSeed;
-      const res = await generateNextCandidate({
-        start,
-        targetKm: targetDistanceKm,
-        shape: routeShape,
-        existingRoutes: candidates.map((c) => c.routeData.coordinates),
-        seedOffset: nextSeed,
-        signal: controller.signal,
-      });
-
-      if (controller.signal.aborted || generationKeyRef.current !== key) return;
-      setIsLoadingMore(false);
-
-      if (res.candidate) {
-        const nextList = [...candidates, res.candidate];
-        setCandidates(nextList);
-        setActiveCandidateId(res.candidate.id);
-        setPeekCandidateId(null);
-        setFitTrigger((n) => n + 1);
-        const devPct =
-          targetDistanceKm > 0
-            ? ((res.candidate.routeData.distanceKm - targetDistanceKm) / targetDistanceKm) * 100
-            : 0;
-        const acc = Math.max(0, 100 - Math.abs(devPct)).toFixed(0);
-        addToast(
-          'success',
-          `Saran #${nextList.length} Ditambahkan!`,
-          `${res.candidate.routeData.distanceKm.toFixed(2)} km • Akurasi ${acc}%`
-        );
-        startBackgroundPrefetch(
-          key,
-          start,
-          targetDistanceKm,
-          routeShape,
-          nextList.map((c) => c.routeData.coordinates),
-          nextSeed + 1
-        );
-      } else {
-        setExhaustedUnique(true);
-        addToast('info', 'Variasi Maksimal', 'Tidak ada variasi koridor unik tambahan di sekitar sini.');
-      }
-    } catch {
-      if (!controller.signal.aborted) {
-        setIsLoadingMore(false);
-      }
-    }
-  }, [
-    loopStartLocation,
-    isLoadingRoute,
-    isLoadingMore,
-    candidates,
-    exhaustedUnique,
-    targetDistanceKm,
-    routeShape,
-    startBackgroundPrefetch,
-    addToast,
-  ]);
-
-  // Helper: surgically re-route only the edited adjacent legs (2-3 anchors -> ~0.7s instead of 9s!)
-  const spliceCandidateSubroute = useCallback(
+  // Helper: surgically re-route only the edited adjacent legs (2-3 anchors)
+  const spliceGeneratedSubroute = useCallback(
     async (
-      candidate: RouteCandidate,
+      current: GeneratedRouteResult,
       params: {
         subWaypoints: LatLng[];
         leftAnchorIdx: number;
@@ -695,25 +451,16 @@ export default function HomePage() {
       } = params;
 
       const seq = ++anchorEditSeqRef.current;
-      // Pause/cancel background prefetch so anchor edit gets 100% routing bandwidth
-      if (prefetchTimerRef.current !== null) {
-        window.clearTimeout(prefetchTimerRef.current);
-        prefetchTimerRef.current = null;
-      }
-      if (prefetchAbortRef.current) {
-        prefetchAbortRef.current.abort();
-        prefetchAbortRef.current = null;
-      }
 
       const snapshot = {
-        anchors: candidate.anchors,
-        anchorIndices: candidate.anchorIndices,
-        routeData: candidate.routeData,
-        isEdited: candidate.isEdited,
+        anchors: current.anchors,
+        anchorIndices: current.anchorIndices,
+        routeData: current.routeData,
+        isEdited: current.isEdited,
       };
 
-      const coords = candidate.routeData.coordinates;
-      const oldIndices = candidate.anchorIndices;
+      const coords = current.routeData.coordinates;
+      const oldIndices = current.anchorIndices;
       const startCoordIdx = Math.max(
         0,
         Math.min(coords.length - 1, oldIndices[leftAnchorIdx] ?? 0)
@@ -753,7 +500,10 @@ export default function HomePage() {
 
       const newSpanEndIdx = prefix.length + mid.length - 1;
       const shiftAfterRight = newSpanEndIdx - endCoordIdx;
-      const nextRightIdx = mode === 'delete' ? leftAnchorIdx + 1 : rightAnchorIdx + (mode === 'insert' ? 1 : 0);
+      const nextRightIdx =
+        mode === 'delete'
+          ? leftAnchorIdx + 1
+          : rightAnchorIdx + (mode === 'insert' ? 1 : 0);
 
       const newAnchorIndices: number[] = alignedAnchors.map((_, k) => {
         if (k < leftAnchorIdx) return oldIndices[k] ?? 0;
@@ -767,7 +517,10 @@ export default function HomePage() {
         }
         if (k === nextRightIdx) return newSpanEndIdx;
         const origIdx = mode === 'insert' ? k - 1 : mode === 'delete' ? k + 1 : k;
-        return Math.max(0, Math.min(stitchedCoords.length - 1, (oldIndices[origIdx] ?? endCoordIdx) + shiftAfterRight));
+        return Math.max(
+          0,
+          Math.min(stitchedCoords.length - 1, (oldIndices[origIdx] ?? endCoordIdx) + shiftAfterRight)
+        );
       });
 
       for (let i = 1; i < newAnchorIndices.length; i++) {
@@ -797,28 +550,23 @@ export default function HomePage() {
         'random',
         targetDistanceKm,
         {
-          shape: candidate.shape,
+          shape: current.shape,
         }
       );
 
-      if (!candidateHistoryRef.current[candidate.id]) {
-        candidateHistoryRef.current[candidate.id] = [];
-      }
-      candidateHistoryRef.current[candidate.id].push(snapshot);
+      routeEditHistoryRef.current.push(snapshot);
       setUndoVersion((v) => v + 1);
 
-      setCandidates((prev) =>
-        prev.map((c) =>
-          c.id === candidate.id
-            ? {
-                ...c,
-                anchors: alignedAnchors,
-                anchorIndices: newAnchorIndices,
-                routeData: updatedRouteData,
-                isEdited: true,
-              }
-            : c
-        )
+      setGeneratedRoute((prev) =>
+        prev && prev.id === current.id
+          ? {
+              ...prev,
+              anchors: alignedAnchors,
+              anchorIndices: newAnchorIndices,
+              routeData: updatedRouteData,
+              isEdited: true,
+            }
+          : prev
       );
     },
     [targetDistanceKm, addToast]
@@ -839,17 +587,17 @@ export default function HomePage() {
         effectivePos = pushOutOfObvitnas(newPos);
       }
 
-      if (index === 0 || !activeCandidate || activeCandidate.anchors.length < 3) {
+      if (index === 0 || !generatedRoute || generatedRoute.anchors.length < 3) {
         hasManualLoopStartRef.current = true;
         setLoopStartLocation(effectivePos);
-        await handleGenerateBatch(effectivePos, 0);
+        await handleGenerateRoute(effectivePos);
         return;
       }
 
-      const anchors = activeCandidate.anchors;
+      const anchors = generatedRoute.anchors;
       const safeIdx = Math.min(anchors.length - 2, Math.max(1, index));
       const nextAnchors = anchors.map((a, i) => (i === safeIdx ? effectivePos : a));
-      await spliceCandidateSubroute(activeCandidate, {
+      await spliceGeneratedSubroute(generatedRoute, {
         subWaypoints: [anchors[safeIdx - 1], effectivePos, anchors[safeIdx + 1]],
         leftAnchorIdx: safeIdx - 1,
         rightAnchorIdx: safeIdx + 1,
@@ -858,13 +606,13 @@ export default function HomePage() {
         mode: 'drag',
       });
     },
-    [activeCandidate, handleGenerateBatch, spliceCandidateSubroute, addToast]
+    [generatedRoute, handleGenerateRoute, spliceGeneratedSubroute, addToast]
   );
 
   // Click route line in Generator Mode -> insert new anchor at segment & bend path
   const handleAnchorInsert = useCallback(
     async (clickedLatLng: LatLng) => {
-      if (!activeCandidate || activeCandidate.anchors.length < 2) return;
+      if (!generatedRoute || generatedRoute.anchors.length < 2) return;
       hasUserMapInteractionRef.current = true;
       const obvCheck = checkObvitnasViolation(clickedLatLng);
       const effectivePos = obvCheck.isRestricted
@@ -872,27 +620,27 @@ export default function HomePage() {
         : clickedLatLng;
 
       const hit = findClosestPointOnPolyline(
-        activeCandidate.routeData.coordinates,
+        generatedRoute.routeData.coordinates,
         effectivePos
       );
       if (!hit) return;
 
       const rawInsertAt = getInsertionIndexForSegment(
-        activeCandidate.anchorIndices,
+        generatedRoute.anchorIndices,
         hit.segmentIndex
       );
       const insertAt = Math.max(
         1,
-        Math.min(activeCandidate.anchors.length - 1, rawInsertAt)
+        Math.min(generatedRoute.anchors.length - 1, rawInsertAt)
       );
 
-      const anchors = activeCandidate.anchors;
+      const anchors = generatedRoute.anchors;
       const nextAnchors = [
         ...anchors.slice(0, insertAt),
         effectivePos,
         ...anchors.slice(insertAt),
       ];
-      await spliceCandidateSubroute(activeCandidate, {
+      await spliceGeneratedSubroute(generatedRoute, {
         subWaypoints: [anchors[insertAt - 1], effectivePos, anchors[insertAt]],
         leftAnchorIdx: insertAt - 1,
         rightAnchorIdx: insertAt,
@@ -901,19 +649,19 @@ export default function HomePage() {
         mode: 'insert',
       });
     },
-    [activeCandidate, spliceCandidateSubroute]
+    [generatedRoute, spliceGeneratedSubroute]
   );
 
   // Click/Right-click intermediate anchor dot in Generator Mode -> remove anchor
   const handleAnchorDelete = useCallback(
     async (index: number) => {
-      if (!activeCandidate) return;
-      const anchors = activeCandidate.anchors;
+      if (!generatedRoute) return;
+      const anchors = generatedRoute.anchors;
       if (index <= 0 || index >= anchors.length - 1 || anchors.length <= 3) {
         return;
       }
       const nextAnchors = anchors.filter((_, i) => i !== index);
-      await spliceCandidateSubroute(activeCandidate, {
+      await spliceGeneratedSubroute(generatedRoute, {
         subWaypoints: [anchors[index - 1], anchors[index + 1]],
         leftAnchorIdx: index - 1,
         rightAnchorIdx: index + 1,
@@ -923,33 +671,31 @@ export default function HomePage() {
       });
       addToast('info', 'Anchor Dihapus', `Titik anchor #${index} dihapus dari jalur.`);
     },
-    [activeCandidate, spliceCandidateSubroute, addToast]
+    [generatedRoute, spliceGeneratedSubroute, addToast]
   );
 
-  // Per-candidate Undo Edit
-  const handleUndoCandidateEdit = useCallback(() => {
-    if (!activeCandidate) return;
-    const stack = candidateHistoryRef.current[activeCandidate.id];
-    if (!stack || stack.length === 0) return;
+  // Undo Edit on generated route
+  const handleUndoRouteEdit = useCallback(() => {
+    if (!generatedRoute) return;
+    const stack = routeEditHistoryRef.current;
+    if (stack.length === 0) return;
 
     const prevSnap = stack.pop()!;
     setUndoVersion((v) => v + 1);
 
-    setCandidates((prev) =>
-      prev.map((c) =>
-        c.id === activeCandidate.id
-          ? {
-              ...c,
-              anchors: prevSnap.anchors,
-              anchorIndices: prevSnap.anchorIndices,
-              routeData: prevSnap.routeData,
-              isEdited: prevSnap.isEdited,
-            }
-          : c
-      )
+    setGeneratedRoute((prev) =>
+      prev
+        ? {
+            ...prev,
+            anchors: prevSnap.anchors,
+            anchorIndices: prevSnap.anchorIndices,
+            routeData: prevSnap.routeData,
+            isEdited: prevSnap.isEdited,
+          }
+        : prev
     );
-    addToast('info', 'Edit Dibatalkan', 'Jalur saran rute dikembalikan ke kondisi sebelumnya.');
-  }, [activeCandidate, addToast]);
+    addToast('info', 'Edit Dibatalkan', 'Jalur rute dikembalikan ke kondisi sebelumnya.');
+  }, [generatedRoute, addToast]);
 
   // Manual & Preview Start Pin Drag
   const handleWaypointDrag = useCallback(
@@ -977,7 +723,6 @@ export default function HomePage() {
           Math.abs(updated[0].lng - updated[updated.length - 1].lng) < 0.0001;
 
         if (index === 0 && isClosed) {
-          // If start of a closed loop is dragged, also drag finish to maintain closed loop
           updated[0] = { ...updated[0], lat: effectivePos.lat, lng: effectivePos.lng };
           updated[updated.length - 1] = {
             ...updated[updated.length - 1],
@@ -998,13 +743,13 @@ export default function HomePage() {
       } else if (currentMode === 'random') {
         hasManualLoopStartRef.current = true;
         setLoopStartLocation(effectivePos);
-        await handleGenerateBatch(effectivePos, 0);
+        await handleGenerateRoute(effectivePos);
       }
     },
-    [currentMode, commitManualWaypoints, recomputeManualRoute, handleGenerateBatch, addToast]
+    [currentMode, commitManualWaypoints, recomputeManualRoute, handleGenerateRoute, addToast]
   );
 
-  // Manual Mode: Delete Single Waypoint (OnTheGoMap click/right-click delete)
+  // Manual Mode: Delete Single Waypoint
   const handleWaypointDelete = useCallback(
     async (index: number) => {
       if (currentMode !== 'manual') return;
@@ -1037,13 +782,12 @@ export default function HomePage() {
     await recomputeManualRoute(nextWaypoints);
   }, [manualRedoStack, commitManualWaypoints, recomputeManualRoute]);
 
-  // Manual Mode: Out & Back (OnTheGoMap signature feature - reverses and returns to start)
+  // Manual Mode: Out & Back
   const handleOutAndBack = useCallback(async () => {
     const curWaypoints = manualWaypointsRef.current;
     if (curWaypoints.length < 2) return;
     setManualRedoStack((prev) => [...prev, curWaypoints]);
 
-    // Reverse intermediate points back to start
     const returnPoints = curWaypoints
       .slice(0, -1)
       .reverse()
@@ -1105,30 +849,27 @@ export default function HomePage() {
     addToast('info', 'Arah Dibalik', 'Titik awal dan akhir rute telah ditukar.');
   }, [commitManualWaypoints, recomputeManualRoute, addToast]);
 
-  // Generator: Re-roll (shift seedOffset to discover fresh corridors)
+  // Generator: Re-roll (shift seedOffset to discover a non-overlapping fresh corridor)
   const handleReRollLoop = useCallback(() => {
-    const nextSeed = seedOffsetRef.current + 3;
-    void handleGenerateBatch(undefined, nextSeed);
-  }, [handleGenerateBatch]);
+    const nextSeed = seedOffsetRef.current + 1;
+    void handleGenerateRoute(undefined, nextSeed);
+  }, [handleGenerateRoute]);
 
-  // Generator: Reset all candidates & defaults
+  // Generator: Reset active route & target defaults
   const handleResetLoop = useCallback(() => {
     cancelAllGeneratorWork();
     seedOffsetRef.current = 0;
     generationKeyRef.current = '';
-    candidateHistoryRef.current = {};
+    recentGeneratedCoordsRef.current = [];
+    routeEditHistoryRef.current = [];
     setUndoVersion((v) => v + 1);
-    setCandidates([]);
-    setActiveCandidateId(null);
-    setPeekCandidateId(null);
-    setExhaustedUnique(false);
+    setGeneratedRoute(null);
     setIsLoadingRoute(false);
-    setIsLoadingMore(false);
     setTargetDistanceKm(10);
     setRouteShape('loop');
     hasManualLoopStartRef.current = false;
     setLoopStartLocation(userGpsLocation || DEFAULT_CENTER);
-    addToast('info', 'Generator Direset', 'Semua saran rute dihapus dan target dikembalikan ke default.');
+    addToast('info', 'Generator Direset', 'Rute dihapus dan target jarak dikembalikan ke default.');
   }, [cancelAllGeneratorWork, userGpsLocation, addToast]);
 
   // Load Imported GPX or Saved Route
@@ -1163,10 +904,10 @@ export default function HomePage() {
         hasUserMapInteractionRef.current = true;
         hasManualLoopStartRef.current = true;
         cancelAllGeneratorWork();
-        setCandidates([]);
-        setActiveCandidateId(null);
-        setPeekCandidateId(null);
-        setExhaustedUnique(false);
+        routeEditHistoryRef.current = [];
+        recentGeneratedCoordsRef.current = [];
+        setGeneratedRoute(null);
+        setUndoVersion((v) => v + 1);
         setUserGpsLocation(userLoc);
         setLoopStartLocation(userLoc);
         setFlyToLocation(userLoc);
@@ -1191,10 +932,10 @@ export default function HomePage() {
       if (currentMode === 'random') {
         hasManualLoopStartRef.current = true;
         cancelAllGeneratorWork();
-        setCandidates([]);
-        setActiveCandidateId(null);
-        setPeekCandidateId(null);
-        setExhaustedUnique(false);
+        routeEditHistoryRef.current = [];
+        recentGeneratedCoordsRef.current = [];
+        setGeneratedRoute(null);
+        setUndoVersion((v) => v + 1);
         setLoopStartLocation(detected);
       }
       addToast(
@@ -1216,8 +957,8 @@ export default function HomePage() {
 
   return (
     <main
-      className={`relative w-screen h-screen overflow-hidden flex ${
-        theme === 'dark' ? 'dark bg-[#0f172a]' : 'bg-[#f1f5f9]'
+      className={`relative w-screen h-[100dvh] overflow-hidden flex ${
+        theme === 'dark' ? 'dark bg-[#0f172a]' : 'bg-[#f8fafc]'
       }`}
     >
       {/* Mobile Quick Telemetry & Pace Control Bar */}
@@ -1233,7 +974,6 @@ export default function HomePage() {
         <RouteMap
           waypoints={activeWaypoints}
           routeData={activeRouteData}
-          peekRouteData={activePeekRouteData}
           editableAnchors={activeEditableAnchors}
           requestedStartLocation={currentMode === 'random' ? loopStartLocation : null}
           routeMode={currentMode}
@@ -1255,7 +995,7 @@ export default function HomePage() {
         />
       </div>
 
-      {/* Floating Control Sidebar */}
+      {/* Floating Route Studio Sidebar & Mobile Bottom Sheet */}
       <Sidebar
         currentMode={currentMode}
         onModeChange={(m) => {
@@ -1263,7 +1003,6 @@ export default function HomePage() {
         }}
         theme={theme}
         onToggleTheme={handleToggleTheme}
-        // Active mode route & waypoints
         waypoints={activeWaypoints}
         routeData={activeRouteData}
         onUndoWaypoint={handleUndoManualWaypoint}
@@ -1277,7 +1016,6 @@ export default function HomePage() {
         unitSystem={unitSystem}
         onToggleUnit={() => setUnitSystem((u) => (u === 'km' ? 'mi' : 'km'))}
         onOpenExport={() => setIsExportOpen(true)}
-        // RunCulture Generator props
         startLocation={loopStartLocation}
         targetDistanceKm={targetDistanceKm}
         onTargetDistanceChange={setTargetDistanceKm}
@@ -1289,41 +1027,26 @@ export default function HomePage() {
         }}
         onUseMyLocation={handleUseMyLocation}
         onGenerateLoop={() => {
-          void handleGenerateBatch();
+          void handleGenerateRoute();
         }}
         onReRollLoop={handleReRollLoop}
         onResetLoop={handleResetLoop}
-        onGenerateMore={() => {
-          void handleGenerateMore();
-        }}
-        candidates={candidates}
-        activeCandidateId={activeCandidateId}
-        onSelectCandidate={(id) => {
-          setActiveCandidateId(id);
-          setPeekCandidateId(null);
-          setFitTrigger((n) => n + 1);
-        }}
-        onPeekCandidate={setPeekCandidateId}
+        isEdited={Boolean(generatedRoute?.isEdited)}
         canUndoEdit={canUndoEdit}
-        onUndoCandidateEdit={handleUndoCandidateEdit}
-        hasPrefetchedNext={hasPrefetchedNext}
-        exhaustedUnique={exhaustedUnique}
-        isLoadingMore={isLoadingMore}
+        onUndoRouteEdit={handleUndoRouteEdit}
         isLoading={isLoadingRoute}
       />
 
-      {/* Floating Metrics HUD (Desktop) */}
-      <div className="hidden md:block absolute right-4 bottom-4 md:bottom-6 z-30 md:max-w-[300px] lg:max-w-sm w-full space-y-3 pointer-events-none">
-        <div className="pointer-events-auto">
-          <StatsHud
-            routeData={activeRouteData}
-            paceSeconds={paceSeconds}
-            onPaceChange={setPaceSeconds}
-            onOpenExport={() => setIsExportOpen(true)}
-            unitSystem={unitSystem}
-            onToggleUnit={() => setUnitSystem((u) => (u === 'km' ? 'mi' : 'km'))}
-          />
-        </div>
+      {/* Top-Center Floating Telemetry Capsule (Desktop) */}
+      <div className="hidden md:flex fixed top-4 left-[352px] xl:left-[418px] right-[74px] z-30 justify-center pointer-events-none">
+        <StatsHud
+          routeData={activeRouteData}
+          paceSeconds={paceSeconds}
+          onPaceChange={setPaceSeconds}
+          onOpenExport={() => setIsExportOpen(true)}
+          unitSystem={unitSystem}
+          onToggleUnit={() => setUnitSystem((u) => (u === 'km' ? 'mi' : 'km'))}
+        />
       </div>
 
       {/* Export GPX / GeoJSON Modal */}

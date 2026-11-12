@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { RouteData, UnitSystem } from '@/lib/types';
 import { calculatePaceTime, calculateCalories, kmToMiles } from '@/lib/geo';
 import {
@@ -8,8 +8,8 @@ import {
   Flame,
   Download,
   Activity,
-  Sliders,
   ChevronDown,
+  X,
 } from 'lucide-react';
 import PaceControl, { formatPaceValue } from './PaceControl';
 
@@ -31,6 +31,27 @@ export default function StatsHud({
   onToggleUnit,
 }: StatsHudProps) {
   const [showPacePicker, setShowPacePicker] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showPacePicker) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowPacePicker(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowPacePicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showPacePicker]);
 
   const isMiles = unitSystem === 'mi';
   const distanceKm = routeData ? routeData.distanceKm : 0;
@@ -44,119 +65,147 @@ export default function StatsHud({
   const paceUnitLabel = isMiles ? '/MI' : '/KM';
 
   return (
-    <div className="strava-card rounded-2xl p-3.5 space-y-2.5 text-slate-900 dark:text-slate-100">
-      {/* Top Main Metrics Row */}
-      <div className="grid grid-cols-3 gap-1 items-center text-center">
-        {/* Distance + Unit Switcher */}
-        <div className="group flex flex-col items-center py-1 px-0.5 rounded-xl hover:bg-slate-50/90 dark:hover:bg-slate-800/60 transition-colors duration-150">
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">
+    <div ref={containerRef} className="relative pointer-events-auto w-fit max-w-full">
+      {/* Horizontal Architectural Telemetry Pill Dock */}
+      <div className="cockpit-card rounded-2xl px-3 xl:px-4 py-1.5 xl:py-2 flex items-center gap-2.5 xl:gap-4 text-[var(--text-primary)]">
+        {/* Distance Hero KPI + KM/MI Unit Toggle */}
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-col">
+            <span className="text-[10px] uppercase tracking-wider font-bold text-[var(--text-muted)] leading-none">
               Jarak
             </span>
-            {onToggleUnit && (
-              <button
-                type="button"
-                onClick={onToggleUnit}
-                title="Ganti satuan KM / Miles"
-                className="px-1.5 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-mono font-bold text-[9px] leading-none border border-slate-200 dark:border-slate-700 ui-btn-secondary ui-focus-ring"
-              >
-                {distUnitLabel}
-              </button>
-            )}
-          </div>
-          <div className="flex items-baseline gap-0.5 mt-0.5">
-            <span className="text-2xl font-black font-mono tracking-tight text-[#fc4c02] tabular-nums transition-transform duration-150 group-hover:scale-[1.03]">
-              {displayDist.toFixed(2)}
-            </span>
-            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
-              {distUnitLabel}
-            </span>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="font-display text-2xl xl:text-3xl font-extrabold tracking-tight text-[#fc4c02] tabular-nums leading-none">
+                {displayDist.toFixed(2)}
+              </span>
+              {onToggleUnit ? (
+                <button
+                  type="button"
+                  onClick={onToggleUnit}
+                  title="Ganti satuan KM / Miles"
+                  aria-label={`Satuan jarak ${distUnitLabel}, klik untuk mengganti`}
+                  className="px-1.5 py-0.5 rounded-md bg-[var(--surface-well)] hover:bg-[var(--brand-tint)] text-[var(--text-primary)] hover:text-[var(--brand-ink)] font-mono font-extrabold text-[10px] leading-none border border-[var(--border-subtle)] ui-btn-secondary ui-focus-ring"
+                >
+                  {distUnitLabel}
+                </button>
+              ) : (
+                <span className="font-mono text-[10px] font-bold text-[var(--text-muted)]">
+                  {distUnitLabel}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
+        <span aria-hidden="true" className="h-7 w-px bg-[var(--border-subtle)] shrink-0" />
+
         {/* Est. Time */}
-        <div className="group flex flex-col items-center py-1 px-0.5 rounded-xl hover:bg-slate-50/90 dark:hover:bg-slate-800/60 transition-colors duration-150 border-l border-slate-200/70 dark:border-slate-800">
-          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
-            <Timer className="w-3 h-3 text-sky-600 dark:text-sky-400 transition-transform duration-150 group-hover:scale-110" />{' '}
-            Waktu
+        <div className="flex flex-col shrink-0">
+          <span className="text-[10px] uppercase tracking-wider font-bold text-[var(--text-muted)] flex items-center gap-1 leading-none">
+            <Timer className="w-3 h-3 text-sky-600 dark:text-sky-400" aria-hidden="true" />
+            <span>Waktu</span>
           </span>
-          <span className="text-lg font-black font-mono tracking-tight text-slate-900 dark:text-white mt-0.5 tabular-nums">
+          <span className="font-mono text-xs lg:text-sm xl:text-base font-extrabold text-[var(--text-primary)] tabular-nums leading-tight mt-1">
             {timeInfo.formatted}
           </span>
         </div>
 
+        <span aria-hidden="true" className="h-7 w-px bg-[var(--border-subtle)] shrink-0" />
+
         {/* Calories */}
-        <div className="group flex flex-col items-center py-1 px-0.5 rounded-xl hover:bg-slate-50/90 dark:hover:bg-slate-800/60 transition-colors duration-150 border-l border-slate-200/70 dark:border-slate-800">
-          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
-            <Flame className="w-3 h-3 text-[#fc4c02] transition-transform duration-150 group-hover:scale-110" />{' '}
-            Kalori
+        <div className="flex flex-col shrink-0">
+          <span className="text-[10px] uppercase tracking-wider font-bold text-[var(--text-muted)] flex items-center gap-1 leading-none">
+            <Flame className="w-3 h-3 text-[#fc4c02]" aria-hidden="true" />
+            <span>Kalori</span>
           </span>
-          <span className="text-lg font-black font-mono tracking-tight text-[#c93b00] dark:text-orange-400 mt-0.5 tabular-nums">
+          <span className="font-mono text-xs lg:text-sm xl:text-base font-extrabold text-[var(--brand-ink)] tabular-nums leading-tight mt-1">
             ~{calories}
           </span>
         </div>
-      </div>
 
-      {/* Pace Controller Bar */}
-      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2 text-xs">
-        <div className="flex items-center gap-2 min-w-0">
-          <Activity className="w-4 h-4 text-[#fc4c02] shrink-0" />
-          <span className="text-slate-600 dark:text-slate-300 font-semibold whitespace-nowrap">
-            Target Pace:
-          </span>
-          <span className="font-mono font-bold text-[#c93b00] dark:text-orange-300 bg-orange-50 dark:bg-orange-950/60 px-2 py-0.5 rounded-lg border border-orange-200 dark:border-orange-500/40 tabular-nums whitespace-nowrap">
-            {paceString} {paceUnitLabel}
-          </span>
-        </div>
+        <span aria-hidden="true" className="h-7 w-px bg-[var(--border-subtle)] shrink-0" />
 
+        {/* Atur Pace Trigger Pill */}
         <button
           type="button"
-          onClick={() => setShowPacePicker(!showPacePicker)}
+          onClick={() => setShowPacePicker((open) => !open)}
           aria-expanded={showPacePicker}
-          className="group text-slate-700 dark:text-slate-200 hover:text-[#fc4c02] dark:hover:text-orange-300 flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg hover:bg-white dark:hover:bg-slate-700/70 transition-colors shrink-0 ui-focus-ring active:scale-95"
+          aria-label="Atur Target Pace Lari"
+          className={`group min-h-[38px] xl:min-h-[40px] px-2.5 xl:px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 xl:gap-2 shrink-0 ui-btn-secondary ui-focus-ring ${
+            showPacePicker
+              ? 'bg-[#fc4c02] border-[#fc4c02] text-white shadow-[0_2px_10px_rgba(252,76,2,0.3)]'
+              : 'bg-[var(--surface-well)] hover:bg-[var(--brand-tint)] text-[var(--text-primary)] hover:text-[var(--brand-ink)] border-[var(--border-subtle)] hover:border-[var(--brand-border)]'
+          }`}
         >
-          <Sliders className="w-3 h-3 transition-transform duration-150 group-hover:scale-110" />
-          <span>{showPacePicker ? 'Tutup' : 'Atur Pace'}</span>
+          <Activity
+            className={`w-4 h-4 shrink-0 ${showPacePicker ? 'text-white' : 'text-[#fc4c02]'}`}
+            aria-hidden="true"
+          />
+          <div className="text-left leading-none">
+            <span
+              className={`block text-[9px] uppercase tracking-wider font-bold ${
+                showPacePicker ? 'text-orange-100' : 'text-[var(--text-muted)]'
+              }`}
+            >
+              Atur Pace
+            </span>
+            <span className="font-mono text-xs font-extrabold tabular-nums">
+              {paceString} {paceUnitLabel}
+            </span>
+          </div>
           <ChevronDown
-            className={`w-3.5 h-3.5 transition-transform duration-200 ${
-              showPacePicker ? 'rotate-180 text-[#fc4c02]' : 'rotate-0'
+            className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${
+              showPacePicker ? 'rotate-180' : 'rotate-0'
             }`}
+            aria-hidden="true"
           />
         </button>
-      </div>
 
-      {/* Smooth Accordion Pace Drawer */}
-      <div
-        className={`grid transition-[grid-template-rows,opacity] duration-[220ms] ease-[cubic-bezier(0.23,1,0.32,1)] ${
-          showPacePicker
-            ? 'grid-rows-[1fr] opacity-100'
-            : 'grid-rows-[0fr] opacity-0 pointer-events-none'
-        }`}
-      >
-        <div className="overflow-hidden">
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
-            <PaceControl
-              paceSeconds={paceSeconds}
-              onPaceChange={onPaceChange}
-              unitSystem={unitSystem}
-              isInteractive={showPacePicker}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom Action: Export */}
-      <div className="pt-0.5">
+        {/* Primary Export GPX Button */}
         <button
           type="button"
           onClick={onOpenExport}
           disabled={!routeData || routeData.coordinates.length < 2}
-          className="group w-full py-2.5 px-3 rounded-xl bg-[#fc4c02] hover:bg-[#e34402] text-white font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-45 disabled:pointer-events-none ui-btn-primary ui-focus-ring"
+          title="Ekspor GPX / GeoJSON"
+          className="group min-h-[38px] xl:min-h-[40px] px-2.5 xl:px-3.5 py-2 rounded-xl bg-[#fc4c02] hover:bg-[#e34402] text-white font-bold text-xs flex items-center gap-1.5 shrink-0 disabled:opacity-45 disabled:pointer-events-none ui-btn-primary ui-focus-ring"
         >
-          <Download className="w-3.5 h-3.5 transition-transform duration-150 group-hover:translate-y-0.5" />
-          <span>Ekspor GPX / JSON</span>
+          <Download
+            className="w-3.5 h-3.5 transition-transform duration-150 group-hover:translate-y-0.5"
+            aria-hidden="true"
+          />
+          <span className="whitespace-nowrap">
+            Ekspor<span className="hidden xl:inline"> GPX</span>
+          </span>
         </button>
       </div>
+
+      {/* Expandable Pace Studio Popover */}
+      {showPacePicker && (
+        <div className="absolute right-0 top-full mt-2 w-[340px] rounded-2xl cockpit-card p-3.5 space-y-2.5 z-50 ui-dropdown-enter text-[var(--text-primary)]">
+          <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2">
+            <span className="text-xs uppercase tracking-wider font-extrabold text-[var(--text-primary)] flex items-center gap-1.5">
+              <Activity className="w-4 h-4 text-[#fc4c02]" aria-hidden="true" />
+              <span>Atur Target Pace</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowPacePicker(false)}
+              aria-label="Tutup pengaturan pace"
+              className="w-7 h-7 rounded-lg bg-[var(--surface-well)] hover:bg-[var(--brand-tint)] text-[var(--text-muted)] hover:text-[var(--brand-ink)] flex items-center justify-center ui-btn-secondary ui-focus-ring"
+            >
+              <X className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+          </div>
+
+          <PaceControl
+            paceSeconds={paceSeconds}
+            onPaceChange={onPaceChange}
+            unitSystem={unitSystem}
+            isInteractive={showPacePicker}
+            estimatedTimeFormatted={distanceKm > 0 ? timeInfo.formatted : undefined}
+          />
+        </div>
+      )}
     </div>
   );
 }

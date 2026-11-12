@@ -26,7 +26,7 @@ export interface RouteData {
   shape?: GeneratorShape;
 }
 
-export interface RouteCandidate {
+export interface GeneratedRouteResult {
   id: string;
   shape: GeneratorShape;
   routeData: RouteData;
