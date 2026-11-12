@@ -10,24 +10,19 @@ import {
   TileLayerId,
   UnitSystem,
   GeneratorShape,
-  RoutePreferences,
-  DEFAULT_ROUTE_PREFERENCES,
   RouteCandidate,
-  RouteQualityScore,
 } from '@/lib/types';
 import { loadStravaOutdoorStyle } from '@/lib/layers';
 import {
   fetchSmartManualRoute,
   buildRouteData,
   snapWaypointToVehicleRoad,
-  evaluateRouteQuality,
   generateRouteCandidates,
   generateNextCandidate,
 } from '@/lib/osrm';
 import {
   arePolylinesTooSimilar,
   calculatePolylineDistance,
-  computeRouteQualityScore,
   findClosestPointOnPolyline,
   getInsertionIndexForSegment,
 } from '@/lib/geo';
@@ -67,10 +62,9 @@ const THEME_STORAGE_KEY = 'runroute_theme_v1';
 function makeGenKey(
   start: LatLng,
   distKm: number,
-  shape: GeneratorShape,
-  prefs: RoutePreferences
+  shape: GeneratorShape
 ): string {
-  return `${start.lat.toFixed(4)}:${start.lng.toFixed(4)}|${distKm}|${shape}|${prefs.environment}|${prefs.traffic}|${prefs.flow}`;
+  return `${start.lat.toFixed(4)}:${start.lng.toFixed(4)}|${distKm}|${shape}`;
 }
 
 export default function HomePage() {
@@ -136,9 +130,6 @@ export default function HomePage() {
   const [loopStartLocation, setLoopStartLocation] = useState<LatLng | null>(DEFAULT_CENTER);
   const [targetDistanceKm, setTargetDistanceKm] = useState<number>(10);
   const [routeShape, setRouteShape] = useState<GeneratorShape>('loop');
-  const [routePreferences, setRoutePreferences] = useState<RoutePreferences>(
-    DEFAULT_ROUTE_PREFERENCES
-  );
   const [candidates, setCandidates] = useState<RouteCandidate[]>([]);
   const [activeCandidateId, setActiveCandidateId] = useState<string | null>(null);
   const [peekCandidateId, setPeekCandidateId] = useState<string | null>(null);
@@ -166,7 +157,6 @@ export default function HomePage() {
         anchors: LatLng[];
         anchorIndices: number[];
         routeData: RouteData;
-        quality: RouteQualityScore;
         isEdited: boolean;
       }>
     >
@@ -196,7 +186,7 @@ export default function HomePage() {
     }
     prefetchedRef.current = null;
     setHasPrefetchedNext(false);
-  }, [loopStartLocation, targetDistanceKm, routeShape, routePreferences]);
+  }, [loopStartLocation, targetDistanceKm, routeShape]);
 
   // Auto-detect GPS position silently on app startup
   useEffect(() => {
@@ -320,24 +310,6 @@ export default function HomePage() {
 
       commitManualWaypoints(alignedWaypoints);
       setManualRouteData(buildRouteData(alignedWaypoints, result, 'manual'));
-
-      // Non-blocking background quality enrichment (greenery, water, traffic & signals)
-      void evaluateRouteQuality({
-        coordinates: result.coordinates,
-        distanceKm: result.distanceKm,
-        shape: 'loop',
-        fallbackQuietPct: result.estimatedQuietPct,
-        fallbackSignalPoints: result.signalPoints,
-      })
-        .then(({ quality, signalPoints }) => {
-          if (manualRouteSeqRef.current !== seq) return;
-          setManualRouteData((prev) =>
-            prev ? { ...prev, quality, signalPoints } : prev
-          );
-        })
-        .catch(() => {
-          // Non-critical telemetry enrichment
-        });
     },
     [commitManualWaypoints]
   );
@@ -422,7 +394,6 @@ export default function HomePage() {
       start: LatLng,
       distKm: number,
       shape: GeneratorShape,
-      prefs: RoutePreferences,
       existingCoords: LatLng[][],
       nextSeed: number
     ) => {
@@ -447,7 +418,6 @@ export default function HomePage() {
           start,
           targetKm: distKm,
           shape,
-          preferences: prefs,
           existingRoutes: existingCoords,
           seedOffset: nextSeed,
           signal: controller.signal,
@@ -482,7 +452,7 @@ export default function HomePage() {
 
       const seed = explicitSeedOffset !== undefined ? explicitSeedOffset : 0;
       seedOffsetRef.current = seed;
-      const key = makeGenKey(start, targetDistanceKm, routeShape, routePreferences);
+      const key = makeGenKey(start, targetDistanceKm, routeShape);
       generationKeyRef.current = key;
 
       const controller = new AbortController();
@@ -498,7 +468,6 @@ export default function HomePage() {
           start,
           targetKm: targetDistanceKm,
           shape: routeShape,
-          preferences: routePreferences,
           maxCandidates: 3,
           existingRoutes: [],
           seedOffset: seed,
@@ -531,11 +500,15 @@ export default function HomePage() {
         const top = res.candidates[0];
         if (top) {
           const shapeName = routeShape === 'out_and_back' ? 'Pergi-Pulang' : 'Loop';
-          const acc = Math.max(0, 100 - Math.abs(top.quality.metrics.deviationPct)).toFixed(1);
+          const devPct =
+            targetDistanceKm > 0
+              ? ((top.routeData.distanceKm - targetDistanceKm) / targetDistanceKm) * 100
+              : 0;
+          const acc = Math.max(0, 100 - Math.abs(devPct)).toFixed(1);
           addToast(
             'success',
             `${res.candidates.length} Saran Rute ${shapeName} Siap!`,
-            `Terbaik #1: ${top.routeData.distanceKm.toFixed(2)} km (Akurasi ${acc}% • Skor ${top.quality.pct}%)`
+            `Terbaik #1: ${top.routeData.distanceKm.toFixed(2)} km (Akurasi ${acc}%)`
           );
 
           startBackgroundPrefetch(
@@ -543,7 +516,6 @@ export default function HomePage() {
             start,
             targetDistanceKm,
             routeShape,
-            routePreferences,
             res.candidates.map((c) => c.routeData.coordinates),
             seed + 1
           );
@@ -565,7 +537,6 @@ export default function HomePage() {
       loopStartLocation,
       targetDistanceKm,
       routeShape,
-      routePreferences,
       cancelAllGeneratorWork,
       startBackgroundPrefetch,
       addToast,
@@ -579,7 +550,7 @@ export default function HomePage() {
       return;
     }
 
-    const key = makeGenKey(start, targetDistanceKm, routeShape, routePreferences);
+    const key = makeGenKey(start, targetDistanceKm, routeShape);
     generationKeyRef.current = key;
 
     const cached = prefetchedRef.current;
@@ -604,17 +575,21 @@ export default function HomePage() {
           setPeekCandidateId(null);
           setFitTrigger((n) => n + 1);
           seedOffsetRef.current += 1;
+          const devPct =
+            targetDistanceKm > 0
+              ? ((cached.candidate.routeData.distanceKm - targetDistanceKm) / targetDistanceKm) * 100
+              : 0;
+          const acc = Math.max(0, 100 - Math.abs(devPct)).toFixed(0);
           addToast(
             'success',
             `Saran #${nextList.length} Ditambahkan!`,
-            `${cached.candidate.routeData.distanceKm.toFixed(2)} km • Skor ${cached.candidate.quality.pct}%`
+            `${cached.candidate.routeData.distanceKm.toFixed(2)} km • Akurasi ${acc}%`
           );
           startBackgroundPrefetch(
             key,
             start,
             targetDistanceKm,
             routeShape,
-            routePreferences,
             nextList.map((c) => c.routeData.coordinates),
             seedOffsetRef.current + 1
           );
@@ -644,7 +619,6 @@ export default function HomePage() {
         start,
         targetKm: targetDistanceKm,
         shape: routeShape,
-        preferences: routePreferences,
         existingRoutes: candidates.map((c) => c.routeData.coordinates),
         seedOffset: nextSeed,
         signal: controller.signal,
@@ -659,17 +633,21 @@ export default function HomePage() {
         setActiveCandidateId(res.candidate.id);
         setPeekCandidateId(null);
         setFitTrigger((n) => n + 1);
+        const devPct =
+          targetDistanceKm > 0
+            ? ((res.candidate.routeData.distanceKm - targetDistanceKm) / targetDistanceKm) * 100
+            : 0;
+        const acc = Math.max(0, 100 - Math.abs(devPct)).toFixed(0);
         addToast(
           'success',
           `Saran #${nextList.length} Ditambahkan!`,
-          `${res.candidate.routeData.distanceKm.toFixed(2)} km • Skor ${res.candidate.quality.pct}%`
+          `${res.candidate.routeData.distanceKm.toFixed(2)} km • Akurasi ${acc}%`
         );
         startBackgroundPrefetch(
           key,
           start,
           targetDistanceKm,
           routeShape,
-          routePreferences,
           nextList.map((c) => c.routeData.coordinates),
           nextSeed + 1
         );
@@ -690,7 +668,6 @@ export default function HomePage() {
     exhaustedUnique,
     targetDistanceKm,
     routeShape,
-    routePreferences,
     startBackgroundPrefetch,
     addToast,
   ]);
@@ -732,7 +709,6 @@ export default function HomePage() {
         anchors: candidate.anchors,
         anchorIndices: candidate.anchorIndices,
         routeData: candidate.routeData,
-        quality: candidate.quality,
         isEdited: candidate.isEdited,
       };
 
@@ -801,17 +777,6 @@ export default function HomePage() {
       }
 
       const stitchedDistanceKm = calculatePolylineDistance(stitchedCoords);
-      const immediateQuality = computeRouteQualityScore({
-        coordinates: stitchedCoords,
-        distanceKm: stitchedDistanceKm,
-        targetDistanceKm,
-        shape: candidate.shape,
-        greenPct: candidate.quality.metrics.greenPct,
-        waterPct: candidate.quality.metrics.waterPct,
-        quietPct: candidate.quality.metrics.quietPct,
-        signalsCount: candidate.quality.metrics.signalsCount,
-        preferences: routePreferences,
-      });
 
       const updatedWaypoints: Waypoint[] = [
         {
@@ -833,8 +798,6 @@ export default function HomePage() {
         targetDistanceKm,
         {
           shape: candidate.shape,
-          quality: immediateQuality,
-          signalPoints: candidate.routeData.signalPoints,
         }
       );
 
@@ -852,45 +815,13 @@ export default function HomePage() {
                 anchors: alignedAnchors,
                 anchorIndices: newAnchorIndices,
                 routeData: updatedRouteData,
-                quality: immediateQuality,
                 isEdited: true,
               }
             : c
         )
       );
-
-      void evaluateRouteQuality({
-        coordinates: stitchedCoords,
-        distanceKm: stitchedDistanceKm,
-        targetDistanceKm,
-        shape: candidate.shape,
-        preferences: routePreferences,
-        fallbackQuietPct: res.estimatedQuietPct,
-        fallbackSignalPoints: candidate.routeData.signalPoints ?? res.signalPoints,
-      })
-        .then(({ quality, signalPoints }) => {
-          if (anchorEditSeqRef.current !== seq) return;
-          setCandidates((prev) =>
-            prev.map((c) =>
-              c.id === candidate.id
-                ? {
-                    ...c,
-                    quality,
-                    routeData: {
-                      ...c.routeData,
-                      quality,
-                      signalPoints,
-                    },
-                  }
-                : c
-            )
-          );
-        })
-        .catch(() => {
-          // Non-blocking enrichment
-        });
     },
-    [targetDistanceKm, routePreferences, addToast]
+    [targetDistanceKm, addToast]
   );
 
   // Interactive Anchor Drag in Generator Mode
@@ -1012,7 +943,6 @@ export default function HomePage() {
               anchors: prevSnap.anchors,
               anchorIndices: prevSnap.anchorIndices,
               routeData: prevSnap.routeData,
-              quality: prevSnap.quality,
               isEdited: prevSnap.isEdited,
             }
           : c
@@ -1196,7 +1126,6 @@ export default function HomePage() {
     setIsLoadingMore(false);
     setTargetDistanceKm(10);
     setRouteShape('loop');
-    setRoutePreferences(DEFAULT_ROUTE_PREFERENCES);
     hasManualLoopStartRef.current = false;
     setLoopStartLocation(userGpsLocation || DEFAULT_CENTER);
     addToast('info', 'Generator Direset', 'Semua saran rute dihapus dan target dikembalikan ke default.');
@@ -1358,8 +1287,6 @@ export default function HomePage() {
           setIsLoadingRoute(false);
           setRouteShape(shape);
         }}
-        preferences={routePreferences}
-        onPreferencesChange={setRoutePreferences}
         onUseMyLocation={handleUseMyLocation}
         onGenerateLoop={() => {
           void handleGenerateBatch();

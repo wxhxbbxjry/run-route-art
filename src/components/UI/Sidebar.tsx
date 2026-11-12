@@ -7,7 +7,6 @@ import {
   Waypoint,
   RouteData,
   GeneratorShape,
-  RoutePreferences,
   RouteCandidate,
 } from '@/lib/types';
 import ManualMode from './ManualMode';
@@ -49,8 +48,6 @@ interface SidebarProps {
   onTargetDistanceChange: (km: number) => void;
   routeShape: GeneratorShape;
   onRouteShapeChange: (shape: GeneratorShape) => void;
-  preferences: RoutePreferences;
-  onPreferencesChange: React.Dispatch<React.SetStateAction<RoutePreferences>>;
   onUseMyLocation: () => void;
   onGenerateLoop: () => void;
   onReRollLoop: () => void;
@@ -92,8 +89,6 @@ export default function Sidebar({
   onTargetDistanceChange,
   routeShape,
   onRouteShapeChange,
-  preferences,
-  onPreferencesChange,
   onUseMyLocation,
   onGenerateLoop,
   onReRollLoop,
@@ -638,8 +633,6 @@ export default function Sidebar({
               onTargetDistanceChange={onTargetDistanceChange}
               routeShape={routeShape}
               onRouteShapeChange={onRouteShapeChange}
-              preferences={preferences}
-              onPreferencesChange={onPreferencesChange}
               onUseMyLocation={onUseMyLocation}
               onGenerateLoop={onGenerateLoop}
               onReRoll={onReRollLoop}
@@ -893,8 +886,6 @@ export default function Sidebar({
                 onTargetDistanceChange={onTargetDistanceChange}
                 routeShape={routeShape}
                 onRouteShapeChange={onRouteShapeChange}
-                preferences={preferences}
-                onPreferencesChange={onPreferencesChange}
                 onUseMyLocation={onUseMyLocation}
                 onGenerateLoop={onGenerateLoop}
                 onReRoll={onReRollLoop}

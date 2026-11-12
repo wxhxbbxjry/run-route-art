@@ -1,32 +1,25 @@
 import {
-  DEFAULT_ROUTE_PREFERENCES,
   GeneratorShape,
   LatLng,
   RouteCandidate,
   RouteData,
-  RoutePreferences,
-  RouteQualityScore,
   Waypoint,
 } from './types';
 import {
   arePolylinesTooSimilar,
   calculatePolylineDistance,
-  computeRouteQualityScore,
   extractEditableAnchors,
   haversineDistance,
 } from './geo';
 import { OBVITNAS_ZONES, pushOutOfObvitnas, routeHasObvitnasViolation } from './obvitnas';
 import {
-  analyzeRouteEnvironment,
   MvtRoadClass,
   scanRouteRestrictedRoadsMvt,
-  scoutEnvironmentAnchors,
   snapCarRoadFromMvt,
 } from './environment';
 
 const VALHALLA_ROUTE_URL = 'https://valhalla1.openstreetmap.de/route';
 const VALHALLA_LOCATE_URL = 'https://valhalla1.openstreetmap.de/locate';
-const VALHALLA_TRACE_URL = 'https://valhalla1.openstreetmap.de/trace_attributes';
 const BROUTER_ROUTE_URL = 'https://brouter.de/brouter';
 const OSRM_DRIVING_URLS = [
   'https://routing.openstreetmap.de/routed-car/route/v1/driving',
@@ -41,8 +34,6 @@ export interface RouteFetchResult {
   source: 'valhalla' | 'brouter' | 'osrm' | 'direct';
   effectiveStart?: LatLng;
   snappedWaypoints?: LatLng[];
-  estimatedQuietPct?: number;
-  signalPoints?: LatLng[];
   error?: string;
 }
 
@@ -124,8 +115,6 @@ interface EvaluatedTrip {
   obvitnasCount: number;
   unnamedLenKm: number;
   scorePenalty: number;
-  estimatedQuietPct?: number;
-  signalPoints?: LatLng[];
 }
 
 // Strict car & motorcycle costing options on Valhalla (100% free public endpoint):
@@ -893,7 +882,6 @@ function evaluateOsrmRouteObject(route: {
     steps?: Array<{
       name?: string;
       distance?: number;
-      duration?: number;
       maneuver?: { location?: [number, number] };
     }>;
   }>;
@@ -905,14 +893,11 @@ function evaluateOsrmRouteObject(route: {
   const gangPoints: LatLng[] = [];
   let tollCount = 0;
   let unnamedLenKm = 0;
-  let totalStepDistM = 0;
-  let quietStepDistM = 0;
 
   for (const leg of route.legs || []) {
     for (const step of leg.steps || []) {
       const name = String(step.name || '');
       const distM = typeof step.distance === 'number' ? step.distance : 0;
-      const durS = typeof step.duration === 'number' ? step.duration : 0;
       const distKm = distM / 1000;
 
       if (TOLL_ROAD_REGEX.test(name)) tollCount++;
@@ -923,15 +908,6 @@ function evaluateOsrmRouteObject(route: {
         }
       } else if (!name && distKm > 0.06) {
         unnamedLenKm += distKm;
-      }
-
-      if (distM > 0) {
-        totalStepDistM += distM;
-        const speedKmh = durS > 0.5 ? (distM / durS) * 3.6 : 40;
-        // Free-flow driving speed <= 33 km/h on non-toll streets reliably characterizes calm residential/tertiary streets
-        if (speedKmh <= 33 && !TOLL_ROAD_REGEX.test(name)) {
-          quietStepDistM += distM;
-        }
       }
     }
   }
@@ -944,11 +920,6 @@ function evaluateOsrmRouteObject(route: {
     gangPoints.length * 25000 +
     unnamedLenKm * 5000;
 
-  const estimatedQuietPct =
-    totalStepDistM > 0
-      ? Math.min(100, Math.max(0, Math.round((quietStepDistM / totalStepDistM) * 100)))
-      : undefined;
-
   return {
     coordinates: coords,
     distanceKm,
@@ -957,15 +928,12 @@ function evaluateOsrmRouteObject(route: {
     obvitnasCount: obv.violatedZones.length,
     unnamedLenKm,
     scorePenalty,
-    estimatedQuietPct,
   };
 }
 
 const BROUTER_MOTORWAY_REGEX = /\bhighway=(?:motorway|motorway_link)\b|\btoll=yes\b/i;
 const BROUTER_RESTRICTED_WAY_REGEX =
   /\bhighway=(?:service|track|path|footway|steps|pedestrian|cycleway|living_street)\b|\b(?:access=private|motor_vehicle=no|motorcar=no)\b/i;
-const BROUTER_CALM_WAY_REGEX = /\bhighway=(?:tertiary|tertiary_link|unclassified|residential)\b/i;
-const BROUTER_SIGNAL_NODE_REGEX = /\b(?:highway|crossing)=traffic_signals\b/i;
 
 function getNearbyObvitnasNogos(center: LatLng): Array<{ point: LatLng; radiusMeters: number }> {
   const nogos: Array<{ point: LatLng; radiusMeters: number }> = [];
@@ -1011,11 +979,8 @@ async function evaluateBRouterFeature(
   if (coords.length < 2) return null;
 
   const gangPoints: LatLng[] = [];
-  const signalPoints: LatLng[] = [];
   let tollCount = 0;
   let restrictedMeters = 0;
-  let calmDistM = 0;
-  let totalMsgM = 0;
 
   const msgs = feature.properties?.messages;
   if (Array.isArray(msgs) && msgs.length > 1) {
@@ -1024,14 +989,12 @@ async function evaluateBRouterFeature(
     const latIdx = header.indexOf('Latitude');
     const distIdx = header.indexOf('Distance');
     const wayIdx = header.indexOf('WayTags');
-    const nodeIdx = header.indexOf('NodeTags');
 
     for (let i = 1; i < msgs.length; i++) {
       const row = msgs[i];
       if (!Array.isArray(row)) continue;
       const distM = distIdx >= 0 ? Number(row[distIdx] || 0) : 0;
       const wayTags = wayIdx >= 0 ? String(row[wayIdx] || '') : '';
-      const nodeTags = nodeIdx >= 0 ? String(row[nodeIdx] || '') : '';
       const rawLon = lonIdx >= 0 ? Number(row[lonIdx]) / 1e6 : NaN;
       const rawLat = latIdx >= 0 ? Number(row[latIdx]) / 1e6 : NaN;
       const validPt =
@@ -1049,19 +1012,6 @@ async function evaluateBRouterFeature(
         ) {
           gangPoints.push(validPt);
         }
-      } else if (BROUTER_CALM_WAY_REGEX.test(wayTags)) {
-        calmDistM += distM;
-      }
-
-      if (distM > 0) totalMsgM += distM;
-
-      if (
-        validPt &&
-        BROUTER_SIGNAL_NODE_REGEX.test(nodeTags) &&
-        signalPoints.length < 80 &&
-        signalPoints.every((s) => haversineDistance(s, validPt) * 1000 > 40)
-      ) {
-        signalPoints.push(validPt);
       }
     }
   }
@@ -1085,9 +1035,6 @@ async function evaluateBRouterFeature(
       ? trackLenM / 1000
       : calculatePolylineDistance(coords);
 
-  const estimatedQuietPct =
-    totalMsgM > 0 ? Math.min(100, Math.max(0, Math.round((calmDistM / totalMsgM) * 100))) : undefined;
-
   const scorePenalty =
     obv.violatedZones.length * 100000 +
     tollCount * 50000 +
@@ -1102,8 +1049,6 @@ async function evaluateBRouterFeature(
     obvitnasCount: obv.violatedZones.length,
     unnamedLenKm: restrictedMeters / 1000,
     scorePenalty,
-    estimatedQuietPct,
-    signalPoints,
   };
 }
 
@@ -1310,8 +1255,6 @@ async function fetchStrictVehicleSegment(
 ): Promise<{
   coords: LatLng[];
   engine: 'valhalla' | 'brouter' | 'osrm';
-  estimatedQuietPct?: number;
-  signalPoints?: LatLng[];
 } | null> {
   const queryDirection = async (
     from: VehicleAnchor,
@@ -1420,12 +1363,10 @@ async function fetchStrictVehicleSegment(
     return {
       coords: best.coordinates,
       engine: 'valhalla',
-      estimatedQuietPct: best.estimatedQuietPct,
-      signalPoints: best.signalPoints,
     };
   }
 
-  // Tier 2: BRouter car-eco engine (~650ms, gives signal nodes & WayTags street classes)
+  // Tier 2: BRouter car-eco engine (~650ms, provides WayTags street classes)
   if (isBRouterHealthy()) {
     const brouterCandidates = allowContraflow
       ? (
@@ -1446,8 +1387,6 @@ async function fetchStrictVehicleSegment(
       return {
         coords: bestBRouter.coordinates,
         engine: 'brouter',
-        estimatedQuietPct: bestBRouter.estimatedQuietPct,
-        signalPoints: bestBRouter.signalPoints,
       };
     }
   }
@@ -1468,7 +1407,6 @@ async function fetchStrictVehicleSegment(
     return {
       coords: bestCar.coordinates,
       engine: 'osrm',
-      estimatedQuietPct: bestCar.estimatedQuietPct,
     };
   }
 
@@ -1544,8 +1482,6 @@ export async function fetchSmartManualRoute(
           coords: [startAnchor.point, endAnchor.point],
           engine: 'direct' as const,
           isSnapped: false,
-          estimatedQuietPct: undefined as number | undefined,
-          signalPoints: undefined as LatLng[] | undefined,
         };
       }
 
@@ -1558,8 +1494,6 @@ export async function fetchSmartManualRoute(
             coords: seg.coords,
             engine: seg.engine,
             isSnapped: true,
-            estimatedQuietPct: seg.estimatedQuietPct,
-            signalPoints: seg.signalPoints,
           };
         }
       }
@@ -1568,40 +1502,20 @@ export async function fetchSmartManualRoute(
         coords: [startAnchor.point, endAnchor.point],
         engine: 'direct' as const,
         isSnapped: false,
-        estimatedQuietPct: undefined as number | undefined,
-        signalPoints: undefined as LatLng[] | undefined,
       };
     })
   );
 
   const finalCoordinates: LatLng[] = [];
   const segmentEndCoords: LatLng[] = [];
-  const allSignalPoints: LatLng[] = [];
   let hasAnySnapped = false;
   let usedValhalla = false;
   let usedBRouter = false;
-  let quietWeightedSum = 0;
-  let quietWeightTotal = 0;
 
   for (const seg of segmentResults) {
     if (seg.isSnapped) hasAnySnapped = true;
     if (seg.engine === 'valhalla') usedValhalla = true;
     if (seg.engine === 'brouter') usedBRouter = true;
-    if (typeof seg.estimatedQuietPct === 'number') {
-      const segLen = calculatePolylineDistance(seg.coords) || 0.1;
-      quietWeightedSum += seg.estimatedQuietPct * segLen;
-      quietWeightTotal += segLen;
-    }
-    if (Array.isArray(seg.signalPoints)) {
-      for (const sp of seg.signalPoints) {
-        if (
-          allSignalPoints.length < 80 &&
-          allSignalPoints.every((existing) => haversineDistance(existing, sp) * 1000 > 40)
-        ) {
-          allSignalPoints.push(sp);
-        }
-      }
-    }
 
     for (const pt of seg.coords) {
       if (
@@ -1647,10 +1561,6 @@ export async function fetchSmartManualRoute(
     isSnapped: hasAnySnapped,
     source: usedValhalla ? 'valhalla' : usedBRouter ? 'brouter' : hasAnySnapped ? 'osrm' : 'direct',
     snappedWaypoints,
-    ...(quietWeightTotal > 0
-      ? { estimatedQuietPct: Math.round(quietWeightedSum / quietWeightTotal) }
-      : {}),
-    ...(usedBRouter || allSignalPoints.length > 0 ? { signalPoints: allSignalPoints } : {}),
   };
 }
 
@@ -1860,8 +1770,6 @@ export async function generateAccurateLoop(
       isSnapped: true,
       source: 'brouter',
       effectiveStart: coords[0],
-      estimatedQuietPct: brTrips[0].estimatedQuietPct,
-      signalPoints: brTrips[0].signalPoints,
       error: 'Routing Valhalla sibuk, menggunakan jaringan jalan kendaraan BRouter.',
     };
   }
@@ -1900,10 +1808,8 @@ export async function generateAccurateLoop(
   };
 }
 
-export interface RouteQualityExtras {
+export interface RouteBuildExtras {
   shape?: GeneratorShape;
-  quality?: RouteQualityScore;
-  signalPoints?: LatLng[];
 }
 
 /**
@@ -1914,7 +1820,7 @@ export function buildRouteData(
   routeResult: RouteFetchResult,
   mode: RouteData['mode'],
   targetDistanceKm?: number,
-  extras?: RouteQualityExtras
+  extras?: RouteBuildExtras
 ): RouteData {
   return {
     coordinates: routeResult.coordinates,
@@ -1925,186 +1831,6 @@ export function buildRouteData(
     mode,
     targetDistanceKm,
     ...(extras?.shape ? { shape: extras.shape } : {}),
-    ...(extras?.quality ? { quality: extras.quality } : {}),
-    ...(extras?.signalPoints ? { signalPoints: extras.signalPoints } : {}),
-  };
-}
-
-interface TrafficAttributesResult {
-  quietPct: number | null;
-  signalsCount: number | null;
-  signalPoints: LatLng[];
-}
-
-const CALM_ROAD_CLASSES = new Set(['tertiary', 'unclassified', 'residential']);
-
-/**
- * Queries Valhalla trace_attributes on a completed car/motor route to measure
- * calm street share (`quietPct`) and traffic signal locations (`signalPoints`).
- */
-export async function fetchRouteTrafficAttributes(
-  coordinates: LatLng[],
-  abortSignal?: AbortSignal
-): Promise<TrafficAttributesResult> {
-  if (!coordinates || coordinates.length < 2 || !isValhallaHealthy() || abortSignal?.aborted) {
-    return { quietPct: null, signalsCount: null, signalPoints: [] };
-  }
-
-  const slotResult = await withValhallaSlot(async () => {
-    const linked = linkAbortSignals(2600, abortSignal);
-    try {
-      const step = Math.max(1, Math.floor(coordinates.length / 95));
-      const sampled: Array<{ lat: number; lon: number }> = [];
-      for (let i = 0; i < coordinates.length; i += step) {
-        sampled.push({ lat: coordinates[i].lat, lon: coordinates[i].lng });
-      }
-      const last = coordinates[coordinates.length - 1];
-      if (
-        sampled.length === 0 ||
-        sampled[sampled.length - 1].lat !== last.lat ||
-        sampled[sampled.length - 1].lon !== last.lng
-      ) {
-        sampled.push({ lat: last.lat, lon: last.lng });
-      }
-
-      const res = await fetch(VALHALLA_TRACE_URL, {
-        method: 'POST',
-        signal: linked.signal,
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({
-          shape: sampled,
-          costing: 'auto',
-          shape_match: 'map_snap',
-          filters: {
-            attributes: [
-              'edge.road_class',
-              'edge.speed',
-              'edge.length',
-              'edge.end_shape_index',
-              'node.traffic_signal',
-              'shape',
-            ],
-            action: 'include',
-          },
-        }),
-      });
-
-      if (res.status === 429 || res.status >= 500) {
-        markValhallaFailure(res.status === 429);
-        return { quietPct: null, signalsCount: null, signalPoints: [] };
-      }
-
-      markValhallaSuccess();
-      if (!res.ok) {
-        return { quietPct: null, signalsCount: null, signalPoints: [] };
-      }
-
-      const data = await res.json();
-      const edges = Array.isArray(data.edges) ? data.edges : [];
-      const tracedShape = typeof data.shape === 'string' ? decodePolyline6(data.shape) : coordinates;
-
-      let totalLenKm = 0;
-      let quietLenKm = 0;
-      const signalPoints: LatLng[] = [];
-
-      for (const edge of edges) {
-        const lenKm = typeof edge.length === 'number' && Number.isFinite(edge.length) ? edge.length : 0;
-        const cls = String(edge.road_class || '').toLowerCase();
-        const speed = typeof edge.speed === 'number' && Number.isFinite(edge.speed) ? edge.speed : 45;
-        totalLenKm += lenKm;
-        if (CALM_ROAD_CLASSES.has(cls) || speed <= 35) {
-          quietLenKm += lenKm;
-        }
-
-        if (edge.end_node?.traffic_signal) {
-          const endIdx = typeof edge.end_shape_index === 'number' ? edge.end_shape_index : -1;
-          const pt = tracedShape[Math.min(tracedShape.length - 1, Math.max(0, endIdx))];
-          if (pt) {
-            const dup = signalPoints.some((s) => haversineDistance(s, pt) * 1000 <= 40);
-            if (!dup && signalPoints.length < 80) {
-              signalPoints.push(pt);
-            }
-          }
-        }
-      }
-
-      const quietPct =
-        totalLenKm > 0 ? Math.min(100, Math.max(0, Math.round((quietLenKm / totalLenKm) * 100))) : null;
-
-      return {
-        quietPct,
-        signalsCount: signalPoints.length,
-        signalPoints,
-      };
-    } catch {
-      if (!abortSignal?.aborted) {
-        markValhallaFailure(false);
-      }
-      return { quietPct: null, signalsCount: null, signalPoints: [] };
-    } finally {
-      linked.cleanup();
-    }
-  }, abortSignal);
-
-  return slotResult ?? { quietPct: null, signalsCount: null, signalPoints: [] };
-}
-
-/**
- * Evaluates full RunCulture-style quality metrics (Greenery, Water, Calm Traffic,
- * Traffic Signals, Turns/km, Overlap, Distance Accuracy) without elevation.
- */
-export async function evaluateRouteQuality(params: {
-  coordinates: LatLng[];
-  distanceKm: number;
-  targetDistanceKm?: number;
-  shape?: GeneratorShape;
-  preferences?: RoutePreferences;
-  fallbackQuietPct?: number;
-  fallbackSignalPoints?: LatLng[];
-  signal?: AbortSignal;
-}): Promise<{ quality: RouteQualityScore; signalPoints: LatLng[] }> {
-  const {
-    coordinates,
-    distanceKm,
-    targetDistanceKm,
-    shape = 'loop',
-    preferences = DEFAULT_ROUTE_PREFERENCES,
-    fallbackQuietPct,
-    fallbackSignalPoints,
-    signal,
-  } = params;
-
-  const [envStats, trafficStats] = await Promise.all([
-    analyzeRouteEnvironment(coordinates),
-    fetchRouteTrafficAttributes(coordinates, signal),
-  ]);
-
-  const signalPoints =
-    trafficStats.signalsCount !== null
-      ? trafficStats.signalPoints
-      : fallbackSignalPoints ?? [];
-  const signalsCount =
-    trafficStats.signalsCount !== null
-      ? trafficStats.signalsCount
-      : fallbackSignalPoints
-      ? fallbackSignalPoints.length
-      : null;
-
-  const quality = computeRouteQualityScore({
-    coordinates,
-    distanceKm,
-    targetDistanceKm,
-    shape,
-    greenPct: envStats.greenPct,
-    waterPct: envStats.waterPct,
-    quietPct: trafficStats.quietPct ?? fallbackQuietPct ?? null,
-    signalsCount,
-    preferences,
-  });
-
-  return {
-    quality,
-    signalPoints,
   };
 }
 
@@ -2112,7 +1838,6 @@ export interface GenerateCandidatesOptions {
   start: LatLng;
   targetKm: number;
   shape: GeneratorShape;
-  preferences?: RoutePreferences;
   maxCandidates?: number;
   existingRoutes?: LatLng[][];
   seedOffset?: number;
@@ -2140,12 +1865,9 @@ function makeCandidateObject(params: {
   distanceKm: number;
   targetKm: number;
   shape: GeneratorShape;
-  quality: RouteQualityScore;
-  signalPoints: LatLng[];
   source: 'valhalla' | 'brouter' | 'osrm' | 'direct';
-  indexSeed?: number;
 }): RouteCandidate {
-  const { coords, distanceKm, targetKm, shape, quality, signalPoints, source } = params;
+  const { coords, distanceKm, targetKm, shape, source } = params;
   const { points: anchorPts, indices: anchorIndices } = extractEditableAnchors(coords, 14);
 
   const waypoints: Waypoint[] =
@@ -2174,8 +1896,6 @@ function makeCandidateObject(params: {
     mode: 'random',
     targetDistanceKm: targetKm,
     shape,
-    quality,
-    signalPoints,
   };
 
   return {
@@ -2185,7 +1905,6 @@ function makeCandidateObject(params: {
     anchors: anchorPts,
     anchorIndices,
     isEdited: false,
-    quality,
     generatedAt: Date.now(),
   };
 }
@@ -2194,7 +1913,7 @@ interface CandidateSpec {
   rKm: number;
   heading: number;
   reverseOrder: boolean;
-  scenicAnchor?: LatLng;
+  spreadRad?: number;
 }
 
 function angularDiffDeg(a: number, b: number): number {
@@ -2204,7 +1923,7 @@ function angularDiffDeg(a: number, b: number): number {
 
 /**
  * Generates up to `maxCandidates` spatially distinct Car & Motorcycle compliant running routes
- * using RunCulture's multi-candidate + spatial deduplication + greenery/water scouting + quality scoring architecture.
+ * using multi-directional candidate sweeps, distance accuracy calibration, and spatial deduplication.
  */
 export async function generateRouteCandidates(
   options: GenerateCandidatesOptions
@@ -2213,7 +1932,6 @@ export async function generateRouteCandidates(
     start,
     targetKm,
     shape,
-    preferences = DEFAULT_ROUTE_PREFERENCES,
     maxCandidates = 3,
     existingRoutes = [],
     seedOffset = 0,
@@ -2221,43 +1939,33 @@ export async function generateRouteCandidates(
   } = options;
 
   const startAnchor = await resolveVehicleSnapPoint(start, 'loop_start', signal);
+  if (signal?.aborted) {
+    return { candidates: [], effectiveStart: startAnchor.point, exhaustedUnique: false };
+  }
+
   const effectiveStart = startAnchor.point;
   const kmPerLat = 111.139;
   const kmPerLng = kmPerLat * Math.cos((effectiveStart.lat * Math.PI) / 180) || 1;
-
-  // Scout real nearby greenery / water anchors when user prefers green/water or initial balanced batch
-  const needsScout =
-    preferences.environment !== 'any' || existingRoutes.length === 0;
-  const scoutedPromise = needsScout
-    ? scoutEnvironmentAnchors(effectiveStart, Math.max(1.2, targetKm * 0.44)).catch(() => ({
-        greenPoints: [],
-        waterPoints: [],
-      }))
-    : Promise.resolve({ greenPoints: [], waterPoints: [] });
 
   const buildLoopTriplet = (
     rKm: number,
     hDeg: number,
     reverseOrder: boolean,
-    scenicAnchor?: LatLng
+    spreadRad: number = (2 * Math.PI) / 3
   ): LatLng[] => {
     const hRad = (hDeg * Math.PI) / 180;
     const cLat = effectiveStart.lat + (rKm * Math.cos(hRad)) / kmPerLat;
     const cLng = effectiveStart.lng + (rKm * Math.sin(hRad)) / kmPerLng;
     const a0 = hRad + Math.PI;
 
-    let wp1Raw: LatLng = {
-      lat: cLat + (rKm * Math.cos(a0 + (2 * Math.PI) / 3)) / kmPerLat,
-      lng: cLng + (rKm * Math.sin(a0 + (2 * Math.PI) / 3)) / kmPerLng,
+    const wp1Raw: LatLng = {
+      lat: cLat + (rKm * Math.cos(a0 + spreadRad)) / kmPerLat,
+      lng: cLng + (rKm * Math.sin(a0 + spreadRad)) / kmPerLng,
     };
     const wp2Raw: LatLng = {
-      lat: cLat + (rKm * Math.cos(a0 + (4 * Math.PI) / 3)) / kmPerLat,
-      lng: cLng + (rKm * Math.sin(a0 + (4 * Math.PI) / 3)) / kmPerLng,
+      lat: cLat + (rKm * Math.cos(a0 + 2 * Math.PI - spreadRad)) / kmPerLat,
+      lng: cLng + (rKm * Math.sin(a0 + 2 * Math.PI - spreadRad)) / kmPerLng,
     };
-
-    if (scenicAnchor) {
-      wp1Raw = scenicAnchor;
-    }
 
     const wp1 = pushOutOfObvitnas(wp1Raw);
     const wp2 = pushOutOfObvitnas(wp2Raw);
@@ -2267,11 +1975,7 @@ export async function generateRouteCandidates(
       : [effectiveStart, wp1, wp2, effectiveStart];
   };
 
-  const buildOutBackTriplet = (rTurnKm: number, hDeg: number, scenicTurn?: LatLng): LatLng[] => {
-    if (scenicTurn) {
-      const safeTurn = pushOutOfObvitnas(scenicTurn);
-      return [effectiveStart, safeTurn, effectiveStart];
-    }
+  const buildOutBackTriplet = (rTurnKm: number, hDeg: number): LatLng[] => {
     const hRad = (hDeg * Math.PI) / 180;
     const rawTurn: LatLng = {
       lat: effectiveStart.lat + (rTurnKm * Math.cos(hRad)) / kmPerLat,
@@ -2280,72 +1984,35 @@ export async function generateRouteCandidates(
     return [effectiveStart, pushOutOfObvitnas(rawTurn), effectiveStart];
   };
 
-  const scouted = await scoutedPromise;
-  if (signal?.aborted) {
-    return { candidates: [], effectiveStart, exhaustedUnique: false };
-  }
-
-  const scenicPool: LatLng[] = [];
-  if (preferences.environment === 'green') {
-    scenicPool.push(...scouted.greenPoints);
-  } else if (preferences.environment === 'water') {
-    scenicPool.push(...scouted.waterPoints);
-  } else if (preferences.environment === 'green_water') {
-    const maxLen = Math.max(scouted.greenPoints.length, scouted.waterPoints.length);
-    for (let i = 0; i < maxLen; i++) {
-      if (scouted.greenPoints[i]) scenicPool.push(scouted.greenPoints[i]);
-      if (scouted.waterPoints[i]) scenicPool.push(scouted.waterPoints[i]);
-    }
-  } else {
-    if (scouted.greenPoints[0]) scenicPool.push(scouted.greenPoints[0]);
-    if (scouted.waterPoints[0]) scenicPool.push(scouted.waterPoints[0]);
-  }
-
-  const baseAngle = ((seedOffset * 71 + 25) % 360 + 360) % 360;
+  const baseAngle =
+    maxCandidates === 1
+      ? (((25 + 36 + Math.max(0, seedOffset - 1) * 53) % 360) + 360) % 360
+      : (((seedOffset * 71 + 25) % 360) + 360) % 360;
   const primaryTurnClass: ValhallaRoadClass = 'tertiary';
   const baseRadiusKm = shape === 'loop' ? targetKm / 13.5 : targetKm / 2.75;
 
-  // Build angularly diverse Pass 1 specs (<= 3 for +1 prefetch/more, <= 5 for batch generate)
+  // Build angularly diverse Pass 1 specs (5 bisector/oblong rays for +1 so users get genuinely new corridors)
   const pass1Specs: CandidateSpec[] = [];
-  const scenicBearings: number[] = [];
-  const maxScenicCount = maxCandidates === 1 ? 1 : 2;
-
-  if (scenicPool.length > 0) {
-    const startIdx = seedOffset % scenicPool.length;
-    for (let step = 0; step < scenicPool.length && pass1Specs.length < maxScenicCount; step++) {
-      const scenic = scenicPool[(startIdx + step) % scenicPool.length];
-      const bearingDeg =
-        ((Math.atan2(
-          (scenic.lng - effectiveStart.lng) * kmPerLng,
-          (scenic.lat - effectiveStart.lat) * kmPerLat
-        ) *
-          180) /
-          Math.PI +
-          360) %
-        360;
-      if (scenicBearings.some((b) => angularDiffDeg(b, bearingDeg) < 42)) {
-        continue;
-      }
-      scenicBearings.push(bearingDeg);
-      pass1Specs.push({
-        rKm: baseRadiusKm,
-        heading: (bearingDeg + 35 + seedOffset * 17) % 360,
-        reverseOrder: (step + seedOffset) % 2 === 1,
-        scenicAnchor: scenic,
-      });
-    }
-  }
-
-  const targetPass1Count = maxCandidates === 1 ? 3 : 5;
-  const compassStep = maxCandidates === 1 ? 135 : 72;
-  for (let i = 0; i < 6 && pass1Specs.length < targetPass1Count; i++) {
+  const targetPass1Count = 5;
+  const compassStep = 72;
+  const radiusScales = maxCandidates === 1 ? [1.22, 0.82, 1.48, 0.68, 1.65] : [1.0, 1.0, 1.0, 1.0, 1.0];
+  const spreadAngles =
+    maxCandidates === 1
+      ? [
+          (2 * Math.PI) / 3,
+          (Math.PI * 3) / 4,
+          Math.PI / 2,
+          (2 * Math.PI) / 3,
+          (Math.PI * 5) / 6,
+        ]
+      : undefined;
+  for (let i = 0; i < targetPass1Count; i++) {
     const heading = (baseAngle + i * compassStep) % 360;
-    const tooCloseToScenic = pass1Specs.some((s) => angularDiffDeg(s.heading, heading) < 32);
-    if (tooCloseToScenic && i < 4) continue;
     pass1Specs.push({
-      rKm: baseRadiusKm,
+      rKm: baseRadiusKm * (radiusScales[i] ?? 1.0),
       heading,
       reverseOrder: (i + seedOffset) % 2 === 1,
+      ...(spreadAngles ? { spreadRad: spreadAngles[i] } : {}),
     });
   }
 
@@ -2364,8 +2031,8 @@ export async function generateRouteCandidates(
   const snapSpecWaypoints = async (spec: CandidateSpec): Promise<LatLng[]> => {
     const rawPts =
       shape === 'loop'
-        ? buildLoopTriplet(spec.rKm, spec.heading, spec.reverseOrder, spec.scenicAnchor)
-        : buildOutBackTriplet(spec.rKm, spec.heading, spec.scenicAnchor);
+        ? buildLoopTriplet(spec.rKm, spec.heading, spec.reverseOrder, spec.spreadRad)
+        : buildOutBackTriplet(spec.rKm, spec.heading);
 
     // Pre-snap intermediate anchors onto real OpenFreeMap z=14 car streets so BRouter/OSRM never hit islands or alleys
     const snapped = await Promise.all(
@@ -2403,6 +2070,7 @@ export async function generateRouteCandidates(
         }));
 
         const res = await fetchValhallaTrips(valhallaLocs, {
+          alternates: maxCandidates === 1 ? 1 : 0,
           excludeLocations: excludeLocs,
           timeoutMs: 2600,
           signal,
@@ -2549,10 +2217,9 @@ export async function generateRouteCandidates(
   // Deduplicate spatially against `existingRoutes` + already picked pool using 62% overlap threshold
   const selectedRaw: RawCandidateProposal[] = [];
   const referencePolylines: LatLng[][] = [...existingRoutes];
-  const pickLimit = maxCandidates === 1 ? 1 : maxCandidates + 1;
 
   for (const cand of validPool) {
-    if (selectedRaw.length >= pickLimit) break;
+    if (selectedRaw.length >= maxCandidates) break;
     if (
       (cand.trip.obvitnasCount > 0 || cand.trip.tollCount > 0) &&
       validPool.some((v) => v.trip.obvitnasCount === 0 && v.trip.tollCount === 0)
@@ -2572,58 +2239,33 @@ export async function generateRouteCandidates(
     );
     if (tooSimilar) continue;
 
+    const closedDistKm = calculatePolylineDistance(coords);
+    const closedDevRatio = Math.abs(closedDistKm - targetKm) / (targetKm || 1);
+
     selectedRaw.push({
       ...cand,
+      quickScore: cand.trip.scorePenalty + closedDevRatio * 1000,
       trip: {
         ...cand.trip,
         coordinates: coords,
-        distanceKm: calculatePolylineDistance(coords),
+        distanceKm: closedDistKm,
       },
     });
     referencePolylines.push(coords);
   }
 
-  // Enrich kept unique candidates in parallel (MVT greenery/water + Valhalla signals or BRouter/OSRM fallback)
-  const enriched = await Promise.all(
-    selectedRaw.map(async (item) => {
-      const coords = item.trip.coordinates;
-      const distanceKm = item.trip.distanceKm;
-      const { quality, signalPoints } = await evaluateRouteQuality({
-        coordinates: coords,
-        distanceKm,
-        targetDistanceKm: targetKm,
-        shape,
-        preferences,
-        fallbackQuietPct: item.trip.estimatedQuietPct,
-        fallbackSignalPoints: item.trip.signalPoints,
-        signal,
-      });
-      return makeCandidateObject({
-        coords,
-        distanceKm,
-        targetKm,
-        shape,
-        quality,
-        signalPoints,
-        source: activeEngine,
-      });
+  // Rank candidates strictly by car/motor compliance (zero penalty) & distance accuracy
+  selectedRaw.sort((a, b) => a.quickScore - b.quickScore);
+
+  const finalList = selectedRaw.slice(0, maxCandidates).map((item) =>
+    makeCandidateObject({
+      coords: item.trip.coordinates,
+      distanceKm: item.trip.distanceKm,
+      targetKm,
+      shape,
+      source: activeEngine,
     })
   );
-
-  // Rank candidates by preference fit (if set) + Run Score (RunCulture 82% pref + 18% score blend)
-  enriched.sort((a, b) => {
-    const scoreA =
-      a.quality.preferenceScore !== null
-        ? 0.82 * a.quality.preferenceScore + 0.18 * (a.quality.pct / 100)
-        : a.quality.pct / 100;
-    const scoreB =
-      b.quality.preferenceScore !== null
-        ? 0.82 * b.quality.preferenceScore + 0.18 * (b.quality.pct / 100)
-        : b.quality.pct / 100;
-    return scoreB - scoreA;
-  });
-
-  const finalList = enriched.slice(0, maxCandidates);
 
   return {
     candidates: finalList,

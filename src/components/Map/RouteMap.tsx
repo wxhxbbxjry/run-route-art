@@ -161,27 +161,6 @@ function buildStartConnectorGeoJson(
   };
 }
 
-function buildSignalsGeoJson(routeData: RouteData | null) {
-  const pts = routeData?.signalPoints;
-  if (!pts || pts.length === 0) {
-    return {
-      type: 'FeatureCollection' as const,
-      features: [],
-    };
-  }
-  return {
-    type: 'FeatureCollection' as const,
-    features: pts.map((pt, idx) => ({
-      type: 'Feature' as const,
-      properties: { idx },
-      geometry: {
-        type: 'Point' as const,
-        coordinates: [pt.lng, pt.lat] as [number, number],
-      },
-    })),
-  };
-}
-
 function buildPreviewGeoJson(from: LatLng | null, to: LatLng | null) {
   if (!from || !to) {
     return {
@@ -786,39 +765,6 @@ export default function RouteMap({
         },
       });
     }
-
-    // 5. Traffic Signal Markers along Route (RunCulture Intersection Signals)
-    if (!map.getSource('route-signals')) {
-      map.addSource('route-signals', {
-        type: 'geojson',
-        data: buildSignalsGeoJson(routeDataRef.current),
-      });
-    } else {
-      const sigSrc = map.getSource('route-signals') as GeoJSONSource | undefined;
-      sigSrc?.setData(buildSignalsGeoJson(routeDataRef.current));
-    }
-
-    if (!map.getLayer('route-signals-circle')) {
-      map.addLayer({
-        id: 'route-signals-circle',
-        type: 'circle',
-        source: 'route-signals',
-        minzoom: 12.5,
-        paint: {
-          'circle-radius': ['interpolate', ['linear'], ['zoom'], 12.5, 3.2, 16, 5.2],
-          'circle-color': '#f59e0b',
-          'circle-stroke-color': tileCfg.isDarkSurface ? '#0f172a' : '#ffffff',
-          'circle-stroke-width': 1.6,
-          'circle-opacity': 0.95,
-        },
-      });
-    } else {
-      map.setPaintProperty(
-        'route-signals-circle',
-        'circle-stroke-color',
-        tileCfg.isDarkSurface ? '#0f172a' : '#ffffff'
-      );
-    }
   }, []);
 
   // Resolve synchronous placeholder or raster spec
@@ -1042,26 +988,6 @@ export default function RouteMap({
       }
     });
 
-    map.on('mousemove', 'route-signals-circle', (e: maplibregl.MapLayerMouseEvent) => {
-      const feat = e.features?.[0];
-      if (!feat) return;
-      map.getCanvas().style.cursor = 'pointer';
-      hoverPopup
-        .setLngLat(e.lngLat)
-        .setHTML(
-          `<div class="text-[11px] font-bold text-slate-900 dark:text-slate-100 leading-tight">
-            Lampu Lalu Lintas
-            <span class="block text-[9px] font-normal text-slate-500 dark:text-slate-400">Simpang bersinyal di sepanjang rute</span>
-          </div>`
-        )
-        .addTo(map);
-    });
-
-    map.on('mouseleave', 'route-signals-circle', () => {
-      map.getCanvas().style.cursor = '';
-      hoverPopup.remove();
-    });
-
     const containerEl = mapContainerRef.current;
     const handleResize = () => {
       map.resize();
@@ -1146,19 +1072,17 @@ export default function RouteMap({
     peekSrc?.setData(buildFullRouteLineGeoJson(peekRouteData));
   }, [peekRouteData]);
 
-  // Update gradient polyline + direction arrow + connector + signal markers
+  // Update gradient polyline + direction arrow + connector
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const segSrc = map.getSource('route-segments') as GeoJSONSource | undefined;
     const fullSrc = map.getSource('route-full-line') as GeoJSONSource | undefined;
     const connSrc = map.getSource('route-start-connector') as GeoJSONSource | undefined;
-    const sigSrc = map.getSource('route-signals') as GeoJSONSource | undefined;
     if (segSrc && fullSrc) {
       segSrc.setData(buildRouteGeoJson(routeData));
       fullSrc.setData(buildFullRouteLineGeoJson(routeData));
       connSrc?.setData(buildStartConnectorGeoJson(requestedStartLocation, routeData));
-      sigSrc?.setData(buildSignalsGeoJson(routeData));
     } else if (map.isStyleLoaded()) {
       ensureCustomLayers(map);
     }

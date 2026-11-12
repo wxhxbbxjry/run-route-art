@@ -10,7 +10,6 @@ import {
   Activity,
   Sliders,
   ChevronDown,
-  Award,
 } from 'lucide-react';
 import PaceControl, { formatPaceValue } from './PaceControl';
 
@@ -23,16 +22,6 @@ interface StatsHudProps {
   onToggleUnit?: () => void;
 }
 
-function getScoreTextBadge(pct: number): string {
-  if (pct >= 75) {
-    return 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-600/40';
-  }
-  if (pct >= 55) {
-    return 'bg-orange-50 dark:bg-orange-950/60 text-[#c93b00] dark:text-orange-300 border-orange-200 dark:border-orange-500/40';
-  }
-  return 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700';
-}
-
 export default function StatsHud({
   routeData,
   paceSeconds,
@@ -42,9 +31,6 @@ export default function StatsHud({
   onToggleUnit,
 }: StatsHudProps) {
   const [showPacePicker, setShowPacePicker] = useState(false);
-  const [showScoreDetail, setShowScoreDetail] = useState(false);
-
-  const quality = routeData?.quality || null;
 
   const isMiles = unitSystem === 'mi';
   const distanceKm = routeData ? routeData.distanceKm : 0;
@@ -158,97 +144,6 @@ export default function StatsHud({
           </div>
         </div>
       </div>
-
-      {/* RunCulture Route Quality Score Breakdown (Zero Elevation) */}
-      {quality && (
-        <div className="rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 overflow-hidden ui-fade-slide-up">
-          <button
-            type="button"
-            onClick={() => setShowScoreDetail((prev) => !prev)}
-            aria-expanded={showScoreDetail}
-            className="w-full px-2.5 py-2 flex items-center justify-between gap-2 text-xs hover:bg-slate-100/70 dark:hover:bg-slate-800 transition-colors ui-focus-ring"
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <Award className="w-4 h-4 text-[#fc4c02] shrink-0" />
-              <span className="font-bold text-slate-700 dark:text-slate-200 whitespace-nowrap">
-                Skor Rute
-              </span>
-              <span
-                className={`font-mono font-black text-[11px] px-2 py-0.5 rounded-lg border tabular-nums ${getScoreTextBadge(
-                  quality.pct
-                )}`}
-              >
-                {quality.pct}%
-              </span>
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate hidden lg:inline">
-                {quality.metrics.greenPct !== null && `Hijau ${quality.metrics.greenPct}%`}
-                {quality.metrics.signalsCount !== null && ` • ${quality.metrics.signalsCount} lampu`}
-              </span>
-            </div>
-
-            <span className="flex items-center gap-1 text-[10px] font-bold text-slate-600 dark:text-slate-300 shrink-0">
-              <span>{showScoreDetail ? 'Tutup' : 'Detail'}</span>
-              <ChevronDown
-                className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                  showScoreDetail ? 'rotate-180 text-[#fc4c02]' : 'rotate-0'
-                }`}
-              />
-            </span>
-          </button>
-
-          <div
-            className={`grid transition-[grid-template-rows,opacity] duration-[220ms] ease-[cubic-bezier(0.23,1,0.32,1)] ${
-              showScoreDetail
-                ? 'grid-rows-[1fr] opacity-100'
-                : 'grid-rows-[0fr] opacity-0 pointer-events-none'
-            }`}
-          >
-            <div className="overflow-hidden">
-              <div className="px-3 pb-3 pt-2 border-t border-slate-200/80 dark:border-slate-700/80 space-y-2">
-                <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-                  {quality.parts.map((part) => {
-                    const fillPct = part.max > 0 ? Math.min(100, Math.round((part.points / part.max) * 100)) : 0;
-                    return (
-                      <div key={part.key} className="space-y-0.5">
-                        <div className="flex items-center justify-between text-[10px] tabular-nums">
-                          <span className="font-semibold text-slate-600 dark:text-slate-300 truncate">
-                            {part.label}
-                          </span>
-                          <span className="font-mono font-bold text-slate-800 dark:text-slate-100">
-                            {part.points}/{part.max}
-                          </span>
-                        </div>
-                        <div className="h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-[#fc4c02] transition-[width] duration-300"
-                            style={{ width: `${fillPct}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="pt-1 border-t border-slate-200/60 dark:border-slate-700/60 flex flex-wrap gap-x-2.5 gap-y-1 text-[10px] text-slate-500 dark:text-slate-400 tabular-nums">
-                  {quality.metrics.greenPct !== null && (
-                    <span>Hijau: <strong className="text-slate-700 dark:text-slate-200">{quality.metrics.greenPct}%</strong></span>
-                  )}
-                  {quality.metrics.waterPct !== null && quality.metrics.waterPct > 0 && (
-                    <span>Air: <strong className="text-slate-700 dark:text-slate-200">{quality.metrics.waterPct}%</strong></span>
-                  )}
-                  {quality.metrics.quietPct !== null && (
-                    <span>Tenang: <strong className="text-slate-700 dark:text-slate-200">{quality.metrics.quietPct}%</strong></span>
-                  )}
-                  {quality.metrics.signalsCount !== null && (
-                    <span>Lampu: <strong className="text-slate-700 dark:text-slate-200">{quality.metrics.signalsCount}</strong></span>
-                  )}
-                  <span>Belok: <strong className="text-slate-700 dark:text-slate-200">{quality.metrics.turnsPerKm}/km</strong></span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Bottom Action: Export */}
       <div className="pt-0.5">
