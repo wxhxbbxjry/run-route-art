@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { RouteMode, LatLng, Waypoint, RouteData } from '@/lib/types';
 import ManualMode from './ManualMode';
 import RandomLoopMode from './RandomLoopMode';
@@ -80,14 +80,18 @@ export default function Sidebar({
   isLoading,
 }: SidebarProps) {
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
+  const [dragEndTick, setDragEndTick] = useState(0);
   const isMobileExpandedRef = useRef(isMobileExpanded);
   isMobileExpandedRef.current = isMobileExpanded;
 
   const sheetRef = useRef<HTMLDivElement>(null);
   const dockHeaderRef = useRef<HTMLDivElement>(null);
+  const modeBarRef = useRef<HTMLDivElement>(null);
   const scrimRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
   const suppressClickRef = useRef(false);
+  const suppressTimeoutRef = useRef<number | null>(null);
+  const snapPendingRef = useRef<boolean>(false);
   const cleanupDragRef = useRef<(() => void) | null>(null);
 
   // Close expanded mobile Menu sheet cleanly on Escape
@@ -102,8 +106,31 @@ export default function Sidebar({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isMobileExpanded]);
 
+  // Synchronize smooth CSS transition start frame AFTER React updates expanded/collapsed class
+  useLayoutEffect(() => {
+    if (!snapPendingRef.current) return;
+    snapPendingRef.current = false;
+
+    const sheet = sheetRef.current;
+    const scrim = scrimRef.current;
+    if (!sheet) return;
+
+    // Commit current dragged inline transform before restoring CSS class transition
+    void sheet.offsetHeight;
+    sheet.style.transition = '';
+    if (scrim) {
+      scrim.style.transition = '';
+    }
+    void sheet.offsetHeight;
+
+    sheet.style.transform = '';
+    if (scrim) {
+      scrim.style.opacity = '';
+    }
+  }, [isMobileExpanded, dragEndTick]);
+
   // Helper: create a live 1:1 vertical drag tracker for the mobile Menu bottom sheet
-  const createDragSession = useCallback((startY: number, startX: number) => {
+  const createDragSession = useCallback((startY: number, startX: number, thresholdPx = 4) => {
     const sheet = sheetRef.current;
     const header = dockHeaderRef.current;
     if (!sheet || !header) return null;
@@ -114,9 +141,7 @@ export default function Sidebar({
     const wasExpanded = isMobileExpandedRef.current;
     const startOffset = wasExpanded ? 0 : maxOffset;
 
-    let lastY = startY;
-    let lastTime = performance.now();
-    let velocityY = 0;
+    const samples: Array<{ y: number; t: number }> = [{ y: startY, t: performance.now() }];
     let currentOffset = startOffset;
     let activeDrag = false;
 
@@ -125,13 +150,17 @@ export default function Sidebar({
       const dx = clientX - startX;
 
       if (!activeDrag) {
-        if (Math.abs(dy) < 6 && Math.abs(dx) < 6) {
+        if (Math.abs(dy) < thresholdPx && Math.abs(dx) < thresholdPx) {
           return 'pending';
         }
-        if (Math.abs(dx) > Math.abs(dy) * 1.15) {
+        if (Math.abs(dx) > Math.abs(dy) * 1.2) {
           return 'cancel';
         }
         activeDrag = true;
+        if (suppressTimeoutRef.current !== null) {
+          window.clearTimeout(suppressTimeoutRef.current);
+          suppressTimeoutRef.current = null;
+        }
         suppressClickRef.current = true;
         sheet.style.transition = 'none';
         if (scrimRef.current) {
@@ -140,18 +169,17 @@ export default function Sidebar({
       }
 
       const now = performance.now();
-      const dt = Math.max(1, now - lastTime);
-      const instantVel = (clientY - lastY) / dt;
-      velocityY = velocityY * 0.4 + instantVel * 0.6;
-      lastY = clientY;
-      lastTime = now;
+      samples.push({ y: clientY, t: now });
+      while (samples.length > 2 && now - samples[0].t > 90) {
+        samples.shift();
+      }
 
       const raw = startOffset + dy;
       let clamped = raw;
       if (raw < 0) {
-        clamped = Math.max(-18, raw * 0.16);
+        clamped = Math.max(-20, raw * 0.18);
       } else if (raw > maxOffset) {
-        clamped = Math.min(maxOffset + 12, maxOffset + (raw - maxOffset) * 0.16);
+        clamped = Math.min(maxOffset + 12, maxOffset + (raw - maxOffset) * 0.18);
       }
       currentOffset = clamped;
 
@@ -167,51 +195,50 @@ export default function Sidebar({
     const end = (cancelled: boolean) => {
       if (!activeDrag) return;
 
-      const threshold = Math.min(84, maxOffset * 0.25);
+      const oldest = samples[0];
+      const latest = samples[samples.length - 1];
+      const elapsed = Math.max(1, latest.t - oldest.t);
+      const velocityY = (latest.y - oldest.y) / elapsed;
+
+      const distanceThreshold = Math.min(48, maxOffset * 0.16);
       let nextExpanded = wasExpanded;
       if (!cancelled) {
-        if (velocityY < -0.32) {
+        if (velocityY < -0.18) {
           nextExpanded = true;
-        } else if (velocityY > 0.32) {
+        } else if (velocityY > 0.18) {
           nextExpanded = false;
         } else if (wasExpanded) {
-          nextExpanded = currentOffset <= threshold;
+          nextExpanded = currentOffset <= distanceThreshold;
         } else {
-          nextExpanded = currentOffset <= maxOffset - threshold;
+          nextExpanded = currentOffset <= maxOffset - distanceThreshold;
         }
       }
 
-      sheet.style.transition = '';
-      if (scrimRef.current) {
-        scrimRef.current.style.transition = '';
-      }
-
-      // Lock current dragged transform as transition start frame before restoring class state
-      void sheet.offsetHeight;
-
-      sheet.style.transform = '';
-      if (scrimRef.current) {
-        scrimRef.current.style.opacity = '';
-      }
-
+      // Defer clearing inline transform until React applies target class in useLayoutEffect
+      snapPendingRef.current = true;
       setIsMobileExpanded(nextExpanded);
-      window.setTimeout(() => {
+      setDragEndTick((t) => t + 1);
+
+      suppressTimeoutRef.current = window.setTimeout(() => {
         suppressClickRef.current = false;
-      }, 90);
+        suppressTimeoutRef.current = null;
+      }, 120);
     };
 
-    return { move, end };
+    return { move, end, isDragging: () => activeDrag };
   }, []);
 
-  // Pointer drag on Handle / Header Bar / Mode Switcher bar
+  // Mouse/Pen pointer drag on Header Bar, Mode Switcher & non-scrolling Content
   const handleHeaderPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      // Touch uses dedicated native non-passive touch listeners below to prevent pointercancel
+      if (e.pointerType === 'touch') return;
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       const targetEl = e.target as HTMLElement | null;
       if (targetEl?.closest('input, textarea, select')) return;
 
       cleanupDragRef.current?.();
-      const session = createDragSession(e.clientY, e.clientX);
+      const session = createDragSession(e.clientY, e.clientX, 5);
       if (!session) return;
 
       const pointerId = e.pointerId;
@@ -257,7 +284,89 @@ export default function Sidebar({
     [createDragSession]
   );
 
-  // Pull down smoothly from top of scrollable Menu body when scrolled to top
+  // Native non-passive Touch listeners on Handle, Header Bar & Mode Switcher (immune to <button> pointercancel)
+  useEffect(() => {
+    const elements = [dockHeaderRef.current, modeBarRef.current].filter(Boolean) as HTMLDivElement[];
+    if (elements.length === 0) return;
+
+    let activeTouchId: number | null = null;
+    let startY = 0;
+    let startX = 0;
+    let abandoned = false;
+    let session: ReturnType<typeof createDragSession> = null;
+
+    const findTouch = (touches: TouchList, id: number): Touch | null => {
+      for (let i = 0; i < touches.length; i++) {
+        if (touches[i].identifier === id) return touches[i];
+      }
+      return null;
+    };
+
+    const onTouchStart = (ev: TouchEvent) => {
+      if (ev.touches.length !== 1) return;
+      const targetEl = ev.target as HTMLElement | null;
+      if (targetEl?.closest('input, textarea, select')) return;
+
+      if (suppressTimeoutRef.current !== null) {
+        window.clearTimeout(suppressTimeoutRef.current);
+        suppressTimeoutRef.current = null;
+      }
+      suppressClickRef.current = false;
+
+      const touch = ev.touches[0];
+      activeTouchId = touch.identifier;
+      startY = touch.clientY;
+      startX = touch.clientX;
+      abandoned = false;
+      session = createDragSession(startY, startX, 4);
+    };
+
+    const onTouchMove = (ev: TouchEvent) => {
+      if (activeTouchId === null || abandoned || !session) return;
+      const touch = findTouch(ev.touches, activeTouchId);
+      if (!touch) return;
+
+      const dy = touch.clientY - startY;
+      const dx = touch.clientX - startX;
+      if ((Math.abs(dy) >= 2 && Math.abs(dy) >= Math.abs(dx)) || session.isDragging()) {
+        if (ev.cancelable) ev.preventDefault();
+      }
+
+      const status = session.move(touch.clientY, touch.clientX);
+      if (status === 'cancel') {
+        abandoned = true;
+        session = null;
+      }
+    };
+
+    const onTouchEndOrCancel = (ev: TouchEvent) => {
+      if (activeTouchId === null) return;
+      if (findTouch(ev.touches, activeTouchId)) return;
+      activeTouchId = null;
+      if (session) {
+        session.end(ev.type === 'touchcancel');
+        session = null;
+      }
+    };
+
+    elements.forEach((el) => {
+      el.addEventListener('touchstart', onTouchStart, { passive: true });
+      el.addEventListener('touchmove', onTouchMove, { passive: false });
+      el.addEventListener('touchend', onTouchEndOrCancel, { passive: true });
+      el.addEventListener('touchcancel', onTouchEndOrCancel, { passive: true });
+    });
+
+    return () => {
+      elements.forEach((el) => {
+        el.removeEventListener('touchstart', onTouchStart);
+        el.removeEventListener('touchmove', onTouchMove);
+        el.removeEventListener('touchend', onTouchEndOrCancel);
+        el.removeEventListener('touchcancel', onTouchEndOrCancel);
+      });
+    };
+  }, [createDragSession]);
+
+  // Native touch pull-down smoothly from Menu content area (without disturbing internal scrolling or sliders)
   useEffect(() => {
     const scrollEl = scrollContentRef.current;
     if (!scrollEl) return;
@@ -301,22 +410,32 @@ export default function Sidebar({
         }
         const dy = touch.clientY - startY;
         const dx = touch.clientX - startX;
-        if (Math.abs(dy) < 7 && Math.abs(dx) < 7) return;
-        if (dy < 0 || Math.abs(dx) > Math.abs(dy) * 1.15) {
+        const canScrollInternally = scrollEl.scrollHeight > scrollEl.clientHeight + 2;
+
+        // Prevent native browser scroll/overscroll on the very first downward pixel at scrollTop <= 1
+        if (dy > 1 && Math.abs(dy) >= Math.abs(dx)) {
+          if (ev.cancelable) ev.preventDefault();
+        }
+
+        if (Math.abs(dy) < 5 && Math.abs(dx) < 5) return;
+        if (Math.abs(dx) > Math.abs(dy) * 1.15) {
           abandoned = true;
           return;
         }
-        session = createDragSession(touch.clientY, touch.clientX);
+        if (canScrollInternally && dy < 0) {
+          abandoned = true;
+          return;
+        }
+        session = createDragSession(touch.clientY, touch.clientX, 0);
         if (!session) {
           abandoned = true;
           return;
         }
       }
 
+      if (ev.cancelable) ev.preventDefault();
       const status = session.move(touch.clientY, touch.clientX);
-      if (status === 'dragging' && ev.cancelable) {
-        ev.preventDefault();
-      } else if (status === 'cancel') {
+      if (status === 'cancel') {
         abandoned = true;
         session = null;
       }
@@ -348,6 +467,9 @@ export default function Sidebar({
   useEffect(() => {
     return () => {
       cleanupDragRef.current?.();
+      if (suppressTimeoutRef.current !== null) {
+        window.clearTimeout(suppressTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -526,7 +648,7 @@ export default function Sidebar({
           <div
             ref={dockHeaderRef}
             onPointerDown={handleHeaderPointerDown}
-            className="touch-none select-none bg-white dark:bg-slate-900 cursor-grab active:cursor-grabbing shrink-0"
+            className="touch-none [&_*]:touch-none select-none bg-white dark:bg-slate-900 cursor-grab active:cursor-grabbing shrink-0"
           >
             {/* Interactive Slide Handle Indicator */}
             <button
@@ -534,9 +656,9 @@ export default function Sidebar({
               onClick={() => setIsMobileExpanded((open) => !open)}
               aria-expanded={isMobileExpanded}
               aria-label={isMobileExpanded ? 'Geser atau ketuk untuk menutup menu' : 'Geser atau ketuk untuk membuka menu'}
-              className="group w-full flex justify-center pt-2.5 pb-1 bg-white dark:bg-slate-900 ui-focus-ring"
+              className="group w-full flex justify-center pt-2 pb-1 bg-white dark:bg-slate-900 ui-focus-ring"
             >
-              <span className="w-10 h-1 rounded-full bg-slate-300 dark:bg-slate-600 transition-all duration-150 group-hover:bg-[#fc4c02] group-active:w-12" />
+              <span className="w-11 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 transition-all duration-150 group-hover:bg-[#fc4c02] group-active:w-14" />
             </button>
 
             {/* Mobile Docked Bar Header */}
@@ -646,8 +768,9 @@ export default function Sidebar({
 
           {/* Mobile Mode Switcher + Dark Theme Toggle */}
           <div
+            ref={modeBarRef}
             onPointerDown={handleHeaderPointerDown}
-            className="touch-none select-none flex items-center gap-1.5 p-2 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 shrink-0"
+            className="touch-none [&_*]:touch-none select-none flex items-center gap-1.5 p-2 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 shrink-0 cursor-grab active:cursor-grabbing"
           >
             <div className="relative grid grid-cols-2 p-0.5 rounded-xl bg-slate-200/75 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 flex-1">
               <span
@@ -698,6 +821,15 @@ export default function Sidebar({
           {/* Mobile Scroll Content */}
           <div
             ref={scrollContentRef}
+            onPointerDown={(e) => {
+              if (e.pointerType === 'touch' || !isMobileExpandedRef.current) return;
+              const scrollEl = scrollContentRef.current;
+              if (scrollEl) {
+                if (scrollEl.scrollTop > 1) return;
+                if (e.clientX >= scrollEl.getBoundingClientRect().right - 14) return;
+              }
+              handleHeaderPointerDown(e);
+            }}
             className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain scroll-smooth p-4 space-y-3"
           >
             {currentMode === 'manual' && (
